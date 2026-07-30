@@ -546,6 +546,12 @@
         }
     }
 
+    function hasGtagLoader(measurementId) {
+        return Array.prototype.some.call(document.scripts, function (script) {
+            return gaIdFromGtagScript(script) === measurementId;
+        });
+    }
+
     function dataLayerCommand(entry) {
         return entry && typeof entry.length === 'number' ? Array.prototype.slice.call(entry) : [];
     }
@@ -902,7 +908,7 @@
             this.ga4LoaderObserver = new window.MutationObserver(function (records) {
                 records.forEach(function (record) {
                     if (record.type === 'attributes') {
-                        inspect(record.target);
+                        if (record.target.tagName === 'SCRIPT') inspect(record.target);
                         return;
                     }
                     Array.prototype.forEach.call(record.addedNodes, inspect);
@@ -1083,8 +1089,7 @@
                 });
                 emit('provider-activated', { provider: 'ga4', measurementId: measurementId });
             };
-            const alreadyLoaded = preloadedGaIds().indexOf(measurementId) >= 0;
-            if (alreadyLoaded) {
+            if (hasGtagLoader(measurementId)) {
                 configure();
                 return;
             }

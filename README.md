@@ -45,7 +45,7 @@ The runtime sets Google Consent Mode to denied before later scripts run. It load
 
 ### Existing GA4 integration
 
-The runtime detects GA4 measurement IDs from existing `gtag.js` sources and `gtag('config', 'G-...')` commands. Before consent, it sets Google’s per-measurement disable flag for detected IDs, including late `dataLayer` configurations and dynamically inserted `gtag.js` loaders. When the visitor agrees, it enables and configures those IDs. This compatibility path does not make a late-loaded consent script compliant: it cannot undo a request or data transmission that occurred before the runtime loaded, and it cannot safely unload JavaScript that already executed. Load this script before every Google Analytics or Google Tag Manager loader, and prefer the explicit `data-ga-id` setup for new integrations.
+The runtime detects GA4 measurement IDs from existing `gtag.js` sources and `gtag('config', 'G-...')` commands. Before consent, it sets Google’s per-measurement disable flag for detected IDs, including late `dataLayer` configurations and dynamically inserted `gtag.js` loaders. When the visitor agrees, it enables and configures those IDs, adding `gtag.js` when a configuration exists without a matching loader. This compatibility path does not make a late-loaded consent script compliant: it cannot undo a request or data transmission that occurred before the runtime loaded, and it cannot safely unload JavaScript that already executed. Load this script before every Google Analytics or Google Tag Manager loader, and prefer the explicit `data-ga-id` setup for new integrations.
 
 ### Consent UI, GA4, and receipt logging
 
