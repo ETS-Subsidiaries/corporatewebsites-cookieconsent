@@ -23,29 +23,35 @@ Place the script in the document `<head>` before Google Analytics, Google Tag Ma
 
 ### Consent UI only
 
-<pre><code>&lt;script src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"&gt;&lt;/script&gt;</code></pre>
+```html
+<script src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"></script>
+```
 
 The banner and local consent settings work without any attributes. Analytics loading and receipt logging remain disabled.
 
 ### Consent UI with GA4
 
-<pre><code>&lt;script
+```html
+<script
   src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"
   data-ga-id="G-MEASURE123"
   data-position="bottom-right"
-&gt;&lt;/script&gt;</code></pre>
+></script>
+```
 
 The runtime sets Google Consent Mode to denied before later scripts run. It loads GA4 only after the visitor agrees.
 
 ### Consent UI, GA4, and receipt logging
 
-<pre><code>&lt;script
+```html
+<script
   src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"
   data-site-id="example-entity"
   data-ga-id="G-MEASURE123"
   data-receipt-endpoint="https://FUNCTION-APP.azurewebsites.net/api/consent-receipts"
   data-position="bottom-left"
-&gt;&lt;/script&gt;</code></pre>
+></script>
+```
 
 Use a release tag or exact commit in production. Do not use a mutable `@main` URL for a legal notice.
 
@@ -109,7 +115,8 @@ Precedence is:
 
 Use valid JSON inside a single-quoted HTML attribute:
 
-<pre><code>&lt;script
+```html
+<script
   src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"
   data-config='{
     "position": "top-right",
@@ -120,7 +127,8 @@ Use valid JSON inside a single-quoted HTML attribute:
       }
     }
   }'
-&gt;&lt;/script&gt;</code></pre>
+></script>
+```
 
 Existing locale objects merge field by field. A new locale must provide every required locale field. The JSON value is limited to 32,768 characters. Unknown keys, invalid JSON, arrays, incomplete new locales, and invalid scalar values are ignored as one override, the editable block remains active, and an `invalid-data-config` diagnostic event is emitted.
 
@@ -314,11 +322,13 @@ It returns `null` before a valid choice exists.
 
 Listen before loading the runtime:
 
-<pre><code>&lt;script&gt;
+```html
+<script>
   document.addEventListener('ets-cookie-consent:statechange', function (event) {
     console.log(event.detail.purposeDecisions.analytics);
   });
-&lt;/script&gt;</code></pre>
+</script>
+```
 
 | Event | Meaning |
 | --- | --- |
@@ -520,3 +530,4 @@ When legally meaningful copy, the privacy link, purposes, or consent behavior ch
 5. Publish a new Git tag; never move an existing production tag.
 
 For sites that cannot depend on jsDelivr, download the tagged `cookie-consent.js` and serve the same immutable file from the site's approved static hosting.
+````
