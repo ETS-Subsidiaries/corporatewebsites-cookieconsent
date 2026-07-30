@@ -631,3 +631,4 @@ When legally meaningful copy, the privacy link, purposes, or consent behavior ch
 6. Update sites pinned to an exact tag; approved version aliases update through jsDelivr.
 
 For sites that cannot depend on jsDelivr, download the tagged `cookie-consent.js` and serve the same immutable file from the site's approved static hosting.
+````
