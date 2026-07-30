@@ -4,7 +4,7 @@
     // EDITABLE ENTITY CONFIGURATION
     // Add any number of BCP 47 locale keys. Every locale must provide every field below.
     const CONFIG = {
-        runtimeVersion: '1.0.0',
+        runtimeVersion: '1.1.0',
         protocolVersion: 1,
         noticeVersion: '2026-07-30',
         defaultLocale: 'en',
@@ -814,7 +814,7 @@
             this.mode = this.state ? 'closed' : 'prompt';
             this.pendingFocus = '';
             this.returnFocus = null;
-            this.gaConfigured = false;
+            this.configuredGaIds = new Set();
             this.knownGaIds = new Set(config.preloadedGaIds || []);
             if (config.gaId) this.knownGaIds.add(config.gaId);
             this.element = document.createElement('ets-cookie-consent');
@@ -971,20 +971,34 @@
             emit('statechange', this.publicState());
         }
 
+        refreshKnownGaIds() {
+            preloadedGaIds().forEach(function (measurementId) {
+                this.knownGaIds.add(measurementId);
+            }.bind(this));
+            if (this.config.gaId) this.knownGaIds.add(this.config.gaId);
+            return Array.from(this.knownGaIds);
+        }
+
         denyAnalytics() {
-            this.knownGaIds.forEach(function (measurementId) {
+            this.refreshKnownGaIds().forEach(function (measurementId) {
                 window['ga-disable-' + measurementId] = true;
             });
             if (typeof window.gtag === 'function') window.gtag('consent', 'update', consentCommand('denied'));
         }
 
         grantAnalytics() {
-            if (this.gpc || !this.config.gaId || !this.state || !this.state.purposeDecisions.analytics) return;
-            const measurementId = this.config.gaId;
-            window['ga-disable-' + measurementId] = false;
+            if (this.gpc || !this.state || !this.state.purposeDecisions.analytics) return;
+            const measurementIds = this.refreshKnownGaIds();
+            measurementIds.forEach(function (measurementId) {
+                window['ga-disable-' + measurementId] = false;
+            });
             window.gtag('consent', 'update', consentCommand('granted'));
-            if (this.gaConfigured) return;
-            this.gaConfigured = true;
+            measurementIds.forEach(this.activateGa4.bind(this));
+        }
+
+        activateGa4(measurementId) {
+            if (this.configuredGaIds.has(measurementId)) return;
+            this.configuredGaIds.add(measurementId);
 
             const configure = function () {
                 window.gtag('js', new Date());
@@ -1004,7 +1018,7 @@
             script.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(measurementId);
             script.addEventListener('load', configure, { once: true });
             script.addEventListener('error', function () {
-                this.gaConfigured = false;
+                this.configuredGaIds.delete(measurementId);
                 emit('diagnostic', { code: 'ga4-load-failed', provider: 'ga4' });
             }.bind(this), { once: true });
             document.head.appendChild(script);

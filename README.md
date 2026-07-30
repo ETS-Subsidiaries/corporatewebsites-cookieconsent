@@ -26,7 +26,7 @@ Place the script in the document `<head>` before Google Analytics, Google Tag Ma
 ### Consent UI only
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.1.0/cookie-consent.js"></script>
 ```
 
 The banner and local consent settings work without any attributes. Analytics loading and receipt logging remain disabled.
@@ -35,7 +35,7 @@ The banner and local consent settings work without any attributes. Analytics loa
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"
+  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.1.0/cookie-consent.js"
   data-ga-id="G-MEASURE123"
   data-position="bottom-right"
 ></script>
@@ -43,11 +43,15 @@ The banner and local consent settings work without any attributes. Analytics loa
 
 The runtime sets Google Consent Mode to denied before later scripts run. It loads GA4 only after the visitor agrees.
 
+### Existing GA4 integration
+
+The runtime detects GA4 measurement IDs from existing `gtag.js` sources and `gtag('config', 'G-...')` commands. When the visitor agrees, it enables and configures those detected IDs. This compatibility path does not make a late-loaded consent script compliant: an analytics loader that runs first can still send requests before the runtime can deny it. Load this script before every Google Analytics or Google Tag Manager loader, and prefer the explicit `data-ga-id` setup for new integrations.
+
 ### Consent UI, GA4, and receipt logging
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"
+  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.1.0/cookie-consent.js"
   data-site-id="example-entity"
   data-ga-id="G-MEASURE123"
   data-receipt-endpoint="https://FUNCTION-APP.azurewebsites.net/api/consent-receipts"
@@ -63,7 +67,7 @@ The editable block is at the top of `cookie-consent.js`:
 
 ```javascript
 const CONFIG = {
-    runtimeVersion: '1.0.0',
+    runtimeVersion: '1.1.0',
     protocolVersion: 1,
     noticeVersion: '2026-07-30',
     defaultLocale: 'en',
@@ -119,7 +123,7 @@ Use valid JSON inside a single-quoted HTML attribute:
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"
+  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.1.0/cookie-consent.js"
   data-config='{
     "position": "top-right",
     "privacyPolicyUrl": "https://www.example.com/privacy",
@@ -283,13 +287,13 @@ Available part names:
 
 1. The runtime establishes denied Google Consent Mode defaults.
 2. With no current choice, it shows the notice.
-3. Acceptance is saved locally and GA4 is loaded immediately when `data-ga-id` is valid.
+3. Acceptance is saved locally and activates configured or detected GA4 measurement IDs.
 4. Decline or withdrawal keeps analytics denied and removes accessible first-party `_ga`, `_gid`, and `_gat` cookies.
 5. A choice expires after six months by default.
 6. Changing `noticeVersion` invalidates the previous choice and shows the notice again.
 7. Global Privacy Control records a local rejection, keeps analytics disabled, and leaves settings available.
 
-Load this script before any analytics code. If analytics already ran, the runtime disables known GA measurement IDs and emits `provider-detected`, but it cannot undo requests that were already sent.
+Load this script before any analytics code. If analytics already ran, the runtime detects known GA measurement IDs, keeps them disabled until acceptance, and emits `provider-detected`. It cannot undo requests that were already sent before the runtime loaded.
 
 The runtime always denies advertising storage, ad user data, and ad personalization. It grants only `analytics_storage`.
 
@@ -337,7 +341,7 @@ Listen before loading the runtime:
 | `ets-cookie-consent:statechange` | Local analytics choice changed |
 | `ets-cookie-consent:localechange` | Visitor selected another configured locale |
 | `ets-cookie-consent:provider-detected` | GA was present before the runtime |
-| `ets-cookie-consent:provider-activated` | Configured GA4 was activated |
+| `ets-cookie-consent:provider-activated` | Configured or detected GA4 was activated |
 | `ets-cookie-consent:receipt-sent` | Backend acknowledged a receipt |
 | `ets-cookie-consent:receipt-failed` | Receipt failed; detail says whether it is retryable |
 | `ets-cookie-consent:receipt-skipped` | Logging is disabled because site ID or endpoint is absent |
@@ -375,7 +379,7 @@ The browser sends:
   "locale": "en",
   "clientDecisionAt": "2026-07-30T14:00:00.000Z",
   "noticeVersion": "2026-07-30",
-  "runtimeVersion": "1.0.0",
+  "runtimeVersion": "1.1.0",
   "protocolVersion": 1
 }
 ```
@@ -508,8 +512,9 @@ Create a temporary HTML page that loads `http://127.0.0.1:8000/cookie-consent.js
 4. `data-config` overrides text and privacy URL.
 5. Agreeing stores the state and reveals the settings button.
 6. With `data-ga-id`, no GA script appears before agreement and one appears after agreement.
-7. With an unavailable receipt endpoint, the local choice still succeeds and a queued receipt remains.
-8. Global Privacy Control produces a local rejection and disables acceptance.
+7. With an existing GA4 `gtag('config', 'G-...')` command, agreement clears its `ga-disable-G-...` flag and emits `provider-activated`.
+8. With an unavailable receipt endpoint, the local choice still succeeds and a queued receipt remains.
+9. Global Privacy Control produces a local rejection and disables acceptance.
 
 Delete the temporary page after the check.
 
@@ -541,12 +546,12 @@ Private repositories cannot use jsDelivr's GitHub CDN endpoint.
 
 ### 2. Create an immutable release tag
 
-After the release changes have been merged into `main`, tag that exact commit. For the first release:
+After the release changes have been merged into `main`, tag that exact commit:
 
 ```powershell
 git fetch origin main
-git tag -a v1.0.0 -m "Release v1.0.0" origin/main
-git push origin v1.0.0
+git tag -a v1.1.0 -m "Release v1.1.0" origin/main
+git push origin v1.1.0
 ```
 
 Use a new semantic version tag for every release. Never move, delete, or force-update a tag that a website may already reference. Creating a GitHub Release from the tag is useful for release notes, but jsDelivr only requires the public repository and Git tag.
@@ -559,10 +564,10 @@ The GitHub URL format is:
 https://cdn.jsdelivr.net/gh/<owner>/<repository>@<tag>/<file-path>
 ```
 
-This repository's first tagged URL is:
+The release URL is:
 
 ```text
-https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js
+https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.1.0/cookie-consent.js
 ```
 
 Requesting that URL is enough for jsDelivr to discover and cache the file. No separate registration or deployment is needed.
@@ -572,11 +577,11 @@ Requesting that URL is enough for jsDelivr to discover and cache the file. No se
 Run this after pushing the tag:
 
 ```powershell
-$Url = "https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"
+$Url = "https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.1.0/cookie-consent.js"
 $Response = Invoke-WebRequest -Uri $Url
 $Response.StatusCode
 $Response.Headers["Content-Type"]
-$Response.Content.Contains("runtimeVersion: '1.0.0'")
+$Response.Content.Contains("runtimeVersion: '1.1.0'")
 ```
 
 The expected status is `200`, the content type should identify JavaScript, and the final command should return `True`. Also open the URL in a browser and confirm that it shows the expected source rather than an error page.
@@ -592,7 +597,7 @@ If the request returns `404`, confirm that:
 
 | URL version | Update behavior | Recommended use |
 | --- | --- | --- |
-| `@v1.0.0` | Always serves that release | Production default; deliberate, auditable updates |
+| `@v1.1.0` | Always serves that release | Production default; deliberate, auditable updates |
 | `@<full-commit-sha>` | Always serves that commit | Emergency pinning or pre-release review |
 | `@1` | Follows the newest compatible `1.x` tag after CDN cache refresh | Centrally managed sites that have approved automatic minor and patch updates |
 | `@main`, `@latest`, or no version | Follows mutable or latest content | Do not use for production consent notices |
