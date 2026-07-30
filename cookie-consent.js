@@ -533,23 +533,32 @@
         window.gtag('set', 'ads_data_redaction', true);
     }
 
+    function gaIdFromGtagScript(script) {
+        if (!script || !script.src) return '';
+        try {
+            const source = new URL(script.src, document.baseURI);
+            if (['www.googletagmanager.com', 'googletagmanager.com'].indexOf(source.hostname) < 0 || source.pathname !== '/gtag/js') {
+                return '';
+            }
+            return validGaId(source.searchParams.get('id'));
+        } catch (error) {
+            return '';
+        }
+    }
+
+    function dataLayerCommand(entry) {
+        return entry && typeof entry.length === 'number' ? Array.prototype.slice.call(entry) : [];
+    }
+
     function preloadedGaIds() {
         const ids = new Set();
         Array.prototype.forEach.call(document.scripts, function (script) {
-            if (!script.src) return;
-            try {
-                const source = new URL(script.src, document.baseURI);
-                if (['www.googletagmanager.com', 'googletagmanager.com'].indexOf(source.hostname) >= 0 && source.pathname === '/gtag/js') {
-                    const id = validGaId(source.searchParams.get('id'));
-                    if (id) ids.add(id);
-                }
-            } catch (error) {
-                return;
-            }
+            const id = gaIdFromGtagScript(script);
+            if (id) ids.add(id);
         });
         if (Array.isArray(window.dataLayer)) {
             window.dataLayer.forEach(function (entry) {
-                const command = entry && typeof entry.length === 'number' ? Array.prototype.slice.call(entry) : [];
+                const command = dataLayerCommand(entry);
                 if (command[0] === 'config') {
                     const id = validGaId(command[1]);
                     if (id) ids.add(id);
@@ -815,11 +824,13 @@
             this.pendingFocus = '';
             this.returnFocus = null;
             this.configuredGaIds = new Set();
-            this.knownGaIds = new Set(config.preloadedGaIds || []);
-            if (config.gaId) this.knownGaIds.add(config.gaId);
+            this.knownGaIds = new Set();
+            (config.preloadedGaIds || []).forEach(this.registerKnownGaId.bind(this));
+            this.registerKnownGaId(config.gaId);
             this.element = document.createElement('ets-cookie-consent');
             this.element.setController(this);
 
+            this.installGa4Guards();
             this.denyAnalytics();
             if (!this.state || !this.state.purposeDecisions.analytics) this.removeGaCookies();
             if (this.gpc && (!this.state || this.state.purposeDecisions.analytics)) {
@@ -844,6 +855,70 @@
 
         copy() {
             return this.config.locales[this.locale] || this.config.locales[this.config.defaultLocale];
+        }
+
+        analyticsAllowed() {
+            return Boolean(!this.gpc && this.state && this.state.purposeDecisions.analytics);
+        }
+
+        registerKnownGaId(value) {
+            const measurementId = validGaId(value);
+            if (!measurementId) return '';
+            this.knownGaIds.add(measurementId);
+            if (!this.analyticsAllowed()) window['ga-disable-' + measurementId] = true;
+            return measurementId;
+        }
+
+        installDataLayerGuard() {
+            const dataLayer = window.dataLayer;
+            if (!Array.isArray(dataLayer) || typeof dataLayer.push !== 'function') return;
+            const push = dataLayer.push;
+            const controller = this;
+            dataLayer.push = function () {
+                Array.prototype.forEach.call(arguments, function (entry) {
+                    const command = dataLayerCommand(entry);
+                    // Set the per-ID Google flag before a loaded tag processes a new config command.
+                    if (command[0] === 'config') controller.registerKnownGaId(command[1]);
+                });
+                return push.apply(this, arguments);
+            };
+        }
+
+        inspectGa4Node(node) {
+            if (!node || node.nodeType !== 1) return;
+            const scripts = node.tagName === 'SCRIPT'
+                ? [node]
+                : typeof node.querySelectorAll === 'function'
+                    ? Array.prototype.slice.call(node.querySelectorAll('script'))
+                    : [];
+            scripts.forEach(function (script) {
+                this.registerKnownGaId(gaIdFromGtagScript(script));
+            }.bind(this));
+        }
+
+        observeGa4Loaders() {
+            if (typeof window.MutationObserver !== 'function' || !document.documentElement) return;
+            const inspect = this.inspectGa4Node.bind(this);
+            this.ga4LoaderObserver = new window.MutationObserver(function (records) {
+                records.forEach(function (record) {
+                    if (record.type === 'attributes') {
+                        inspect(record.target);
+                        return;
+                    }
+                    Array.prototype.forEach.call(record.addedNodes, inspect);
+                });
+            });
+            this.ga4LoaderObserver.observe(document.documentElement, {
+                attributes: true,
+                attributeFilter: ['src'],
+                childList: true,
+                subtree: true
+            });
+        }
+
+        installGa4Guards() {
+            this.installDataLayerGuard();
+            this.observeGa4Loaders();
         }
 
         resolveLocale() {
@@ -973,9 +1048,9 @@
 
         refreshKnownGaIds() {
             preloadedGaIds().forEach(function (measurementId) {
-                this.knownGaIds.add(measurementId);
+                this.registerKnownGaId(measurementId);
             }.bind(this));
-            if (this.config.gaId) this.knownGaIds.add(this.config.gaId);
+            this.registerKnownGaId(this.config.gaId);
             return Array.from(this.knownGaIds);
         }
 

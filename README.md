@@ -45,7 +45,7 @@ The runtime sets Google Consent Mode to denied before later scripts run. It load
 
 ### Existing GA4 integration
 
-The runtime detects GA4 measurement IDs from existing `gtag.js` sources and `gtag('config', 'G-...')` commands. When the visitor agrees, it enables and configures those detected IDs. This compatibility path does not make a late-loaded consent script compliant: an analytics loader that runs first can still send requests before the runtime can deny it. Load this script before every Google Analytics or Google Tag Manager loader, and prefer the explicit `data-ga-id` setup for new integrations.
+The runtime detects GA4 measurement IDs from existing `gtag.js` sources and `gtag('config', 'G-...')` commands. Before consent, it sets Google’s per-measurement disable flag for detected IDs, including late `dataLayer` configurations and dynamically inserted `gtag.js` loaders. When the visitor agrees, it enables and configures those IDs. This compatibility path does not make a late-loaded consent script compliant: it cannot undo a request or data transmission that occurred before the runtime loaded, and it cannot safely unload JavaScript that already executed. Load this script before every Google Analytics or Google Tag Manager loader, and prefer the explicit `data-ga-id` setup for new integrations.
 
 ### Consent UI, GA4, and receipt logging
 
@@ -293,7 +293,7 @@ Available part names:
 6. Changing `noticeVersion` invalidates the previous choice and shows the notice again.
 7. Global Privacy Control records a local rejection, keeps analytics disabled, and leaves settings available.
 
-Load this script before any analytics code. If analytics already ran, the runtime detects known GA measurement IDs, keeps them disabled until acceptance, and emits `provider-detected`. It cannot undo requests that were already sent before the runtime loaded.
+Load this script before any analytics code. If analytics already ran, the runtime detects known GA measurement IDs, disables their future measurement until acceptance, and emits `provider-detected`. It also guards later GA4 configuration commands and newly inserted `gtag.js` loaders. It cannot undo requests that were already sent before the runtime loaded.
 
 The runtime always denies advertising storage, ad user data, and ad personalization. It grants only `analytics_storage`.
 
@@ -512,7 +512,7 @@ Create a temporary HTML page that loads `http://127.0.0.1:8000/cookie-consent.js
 4. `data-config` overrides text and privacy URL.
 5. Agreeing stores the state and reveals the settings button.
 6. With `data-ga-id`, no GA script appears before agreement and one appears after agreement.
-7. With an existing GA4 `gtag('config', 'G-...')` command, agreement clears its `ga-disable-G-...` flag and emits `provider-activated`.
+7. With an existing or late-added GA4 `gtag('config', 'G-...')` command or `gtag.js` loader, its `ga-disable-G-...` flag is true before agreement, false after agreement, and true again after withdrawal.
 8. With an unavailable receipt endpoint, the local choice still succeeds and a queued receipt remains.
 9. Global Privacy Control produces a local rejection and disables acceptance.
 
