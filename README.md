@@ -23,35 +23,29 @@ Place the script in the document `<head>` before Google Analytics, Google Tag Ma
 
 ### Consent UI only
 
-```
-<script src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"></script>
-```
+<pre><code>&lt;script src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"&gt;&lt;/script&gt;</code></pre>
 
 The banner and local consent settings work without any attributes. Analytics loading and receipt logging remain disabled.
 
 ### Consent UI with GA4
 
-```
-<script
+<pre><code>&lt;script
   src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"
   data-ga-id="G-MEASURE123"
   data-position="bottom-right"
-></script>
-```
+&gt;&lt;/script&gt;</code></pre>
 
 The runtime sets Google Consent Mode to denied before later scripts run. It loads GA4 only after the visitor agrees.
 
 ### Consent UI, GA4, and receipt logging
 
-```
-<script
+<pre><code>&lt;script
   src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"
   data-site-id="example-entity"
   data-ga-id="G-MEASURE123"
   data-receipt-endpoint="https://FUNCTION-APP.azurewebsites.net/api/consent-receipts"
   data-position="bottom-left"
-></script>
-```
+&gt;&lt;/script&gt;</code></pre>
 
 Use a release tag or exact commit in production. Do not use a mutable `@main` URL for a legal notice.
 
@@ -59,7 +53,7 @@ Use a release tag or exact commit in production. Do not use a mutable `@main` UR
 
 The editable block is at the top of `cookie-consent.js`:
 
-```
+```javascript
 const CONFIG = {
     runtimeVersion: '1.0.0',
     protocolVersion: 1,
@@ -115,8 +109,7 @@ Precedence is:
 
 Use valid JSON inside a single-quoted HTML attribute:
 
-```
-<script
+<pre><code>&lt;script
   src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"
   data-config='{
     "position": "top-right",
@@ -127,8 +120,7 @@ Use valid JSON inside a single-quoted HTML attribute:
       }
     }
   }'
-></script>
-```
+&gt;&lt;/script&gt;</code></pre>
 
 Existing locale objects merge field by field. A new locale must provide every required locale field. The JSON value is limited to 32,768 characters. Unknown keys, invalid JSON, arrays, incomplete new locales, and invalid scalar values are ignored as one override, the editable block remains active, and an `invalid-data-config` diagnostic event is emitted.
 
@@ -193,7 +185,7 @@ The built-in palette matches the EIC portal theme: EIC navy (`#29526E`) for the 
 
 Set variables on the custom element from the website's stylesheet:
 
-```
+```css
 ets-cookie-consent {
   --ets-consent-panel-background: #ffffff;
   --ets-consent-panel-color: #383b42;
@@ -244,7 +236,7 @@ Available variables:
 
 Use `::part(...)` for deeper entity-specific styling:
 
-```
+```css
 ets-cookie-consent::part(panel) {
   border-width: 2px;
 }
@@ -295,7 +287,7 @@ The runtime always denies advertising storage, ad user data, and ad personalizat
 
 The runtime exposes:
 
-```
+```javascript
 window.ETSCookieConsent.version;
 window.ETSCookieConsent.openSettings();
 window.ETSCookieConsent.getState();
@@ -304,7 +296,7 @@ window.ETSCookieConsent.setLocale('en');
 
 `getState()` returns a privacy-minimized copy:
 
-```
+```json
 {
   "purposeDecisions": { "analytics": true },
   "decisionSource": "accept",
@@ -322,13 +314,11 @@ It returns `null` before a valid choice exists.
 
 Listen before loading the runtime:
 
-```
-<script>
+<pre><code>&lt;script&gt;
   document.addEventListener('ets-cookie-consent:statechange', function (event) {
     console.log(event.detail.purposeDecisions.analytics);
   });
-</script>
-```
+&lt;/script&gt;</code></pre>
 
 | Event | Meaning |
 | --- | --- |
@@ -348,7 +338,7 @@ Receipt and storage events are diagnostic only. They do not change analytics act
 
 The runtime uses origin-scoped `localStorage`:
 
-```
+```text
 ets-cookie-consent:<site-id-or-default>:state
 ets-cookie-consent:<site-id-or-default>:locale
 ets-cookie-consent:<site-id-or-default>:receipt-queue
@@ -364,7 +354,7 @@ Receipt logging is enabled only when both `data-site-id` and a valid endpoint ar
 
 The browser sends:
 
-```
+```json
 {
   "receiptId": "00000000-0000-4000-8000-000000000000",
   "siteId": "example-entity",
@@ -397,7 +387,7 @@ The runtime adds `?siteId=<data-site-id>` to the Function URL so CORS preflight 
 
 The optional backend exposes:
 
-```
+```text
 POST /api/consent-receipts?siteId=<site-id>
 OPTIONS /api/consent-receipts?siteId=<site-id>
 ```
@@ -416,7 +406,7 @@ It uses the Azure Functions Python v2 programming model and `azure-data-tables`.
 
 Example origin map:
 
-```
+```json
 {
   "example-entity": [
     "https://www.example.com",
@@ -430,7 +420,7 @@ Example origin map:
 
 Store it as one compact JSON string in the app setting:
 
-```
+```text
 {"example-entity":["https://www.example.com","https://example.com"],"second-entity":["https://www.second.example"]}
 ```
 
@@ -476,7 +466,7 @@ If Azure portal CORS settings are used, do not configure `*`. Ensure platform CO
 
 Python 3.11 or 3.12 is recommended.
 
-```
+```powershell
 py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m unittest discover -s .\tests -p "test_*.py" -v
@@ -484,7 +474,7 @@ py -m venv .venv
 
 To run the Function locally, copy `local.settings.example.json` to `local.settings.json`, replace placeholders with organization-approved Azure Storage connection strings, and start it with an approved Azure Functions Core Tools installation:
 
-```
+```powershell
 func start
 ```
 
@@ -494,7 +484,7 @@ No Node.js tooling is required by this repository.
 
 Use an approved browser and Python's static server:
 
-```
+```powershell
 py -m http.server 8000
 ```
 
