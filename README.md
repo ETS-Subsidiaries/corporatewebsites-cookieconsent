@@ -19,6 +19,8 @@ This repository does not use Node.js, npm, or a JavaScript build step.
 
 ## Quick start
 
+These examples assume that a release tag has been published. Repository maintainers should complete [Publish through jsDelivr](#publish-through-jsdelivr) before giving a CDN URL to a website owner.
+
 Place the script in the document `<head>` before Google Analytics, Google Tag Manager, or any other analytics loader.
 
 ### Consent UI only
@@ -511,15 +513,113 @@ Create a temporary HTML page that loads `http://127.0.0.1:8000/cookie-consent.js
 
 Delete the temporary page after the check.
 
-## Deployment and release
+## Optional Azure deployment
 
 1. Deploy `function_app.py`, `host.json`, and `requirements.txt` to a Python Azure Function App if receipt logging is approved.
 2. Set the Function app settings and exact origin map.
 3. Confirm preflight and receipt POSTs from each registered production origin.
 4. Set the final receipt endpoint in the editable block, `data-config`, or `data-receipt-endpoint`.
 5. Run the Python tests and browser smoke check.
-6. Tag the repository, for example `v1.0.0`.
-7. Use the immutable tag in each jsDelivr URL.
+
+The Azure Function is not required for jsDelivr publishing or for the consent interface to work.
+
+## Publish through jsDelivr
+
+jsDelivr serves files directly from public GitHub repositories. There is no jsDelivr account to create, file to upload, configuration file to add, or build to run.
+
+### 1. Confirm the release prerequisites
+
+Before publishing:
+
+- The GitHub repository must be public.
+- `cookie-consent.js` must be committed at the repository root on the release commit.
+- The `runtimeVersion` in `cookie-consent.js` must match the planned release.
+- Any legally meaningful change must also have a new `noticeVersion`.
+- The maintainer publishing the release must be allowed to push Git tags.
+
+Private repositories cannot use jsDelivr's GitHub CDN endpoint.
+
+### 2. Create an immutable release tag
+
+After the release changes have been merged into `main`, tag that exact commit. For the first release:
+
+```powershell
+git fetch origin main
+git tag -a v1.0.0 -m "Release v1.0.0" origin/main
+git push origin v1.0.0
+```
+
+Use a new semantic version tag for every release. Never move, delete, or force-update a tag that a website may already reference. Creating a GitHub Release from the tag is useful for release notes, but jsDelivr only requires the public repository and Git tag.
+
+### 3. Build the CDN URL
+
+The GitHub URL format is:
+
+```text
+https://cdn.jsdelivr.net/gh/<owner>/<repository>@<tag>/<file-path>
+```
+
+This repository's first tagged URL is:
+
+```text
+https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js
+```
+
+Requesting that URL is enough for jsDelivr to discover and cache the file. No separate registration or deployment is needed.
+
+### 4. Verify the published file
+
+Run this after pushing the tag:
+
+```powershell
+$Url = "https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.0.0/cookie-consent.js"
+$Response = Invoke-WebRequest -Uri $Url
+$Response.StatusCode
+$Response.Headers["Content-Type"]
+$Response.Content.Contains("runtimeVersion: '1.0.0'")
+```
+
+The expected status is `200`, the content type should identify JavaScript, and the final command should return `True`. Also open the URL in a browser and confirm that it shows the expected source rather than an error page.
+
+If the request returns `404`, confirm that:
+
+1. The repository is public.
+2. The tag exists on GitHub.
+3. The tagged commit contains `cookie-consent.js`.
+4. The owner, repository, tag, and file path use the exact spelling and capitalization shown on GitHub.
+
+### 5. Choose a version policy
+
+| URL version | Update behavior | Recommended use |
+| --- | --- | --- |
+| `@v1.0.0` | Always serves that release | Production default; deliberate, auditable updates |
+| `@<full-commit-sha>` | Always serves that commit | Emergency pinning or pre-release review |
+| `@1` | Follows the newest compatible `1.x` tag after CDN cache refresh | Centrally managed sites that have approved automatic minor and patch updates |
+| `@main`, `@latest`, or no version | Follows mutable or latest content | Do not use for production consent notices |
+
+An exact tag is safest, but each website must update its script URL to adopt a later release. A major-version alias such as `@1` reduces per-site maintenance, but a new compatible release can reach sites automatically. Select one policy for each entity and document that decision.
+
+### 6. Add the URL to the website
+
+Copy the appropriate example from [Quick start](#quick-start), keep the selected version in the URL, and place the script in the document `<head>` before Google Analytics, Google Tag Manager, or another analytics loader. Publish the CMS or website changes, then confirm in browser developer tools that:
+
+1. The jsDelivr request returns HTTP 200.
+2. The consent script loads before analytics.
+3. The banner or saved consent state works without console errors.
+
+### 7. Handle CDN caching
+
+Do not purge or replace an exact release tag. If an immutable release is wrong, fix the problem and publish a new tag.
+
+Version aliases can remain cached for up to seven days. When an approved alias update must take effect sooner, purge only the alias URL through [jsDelivr's purge tool](https://www.jsdelivr.com/tools/purge) or:
+
+```powershell
+Invoke-RestMethod -Uri "https://purge.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@1/cookie-consent.js"
+```
+
+After a purge, request the CDN URL again and repeat the verification steps.
+
+## Release updates
 
 When legally meaningful copy, the privacy link, purposes, or consent behavior changes:
 
@@ -527,7 +627,7 @@ When legally meaningful copy, the privacy link, purposes, or consent behavior ch
 2. Change `noticeVersion` so visitors are prompted again.
 3. Increment `runtimeVersion` for JavaScript behavior changes.
 4. Run the checks.
-5. Publish a new Git tag; never move an existing production tag.
+5. Publish a new immutable Git tag using the jsDelivr steps above.
+6. Update sites pinned to an exact tag; approved version aliases update through jsDelivr.
 
 For sites that cannot depend on jsDelivr, download the tagged `cookie-consent.js` and serve the same immutable file from the site's approved static hosting.
-````
