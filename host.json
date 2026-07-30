@@ -1,0 +1,19 @@
+{
+  "version": "2.0",
+  "extensions": {
+    "http": {
+      "routePrefix": "api"
+    }
+  },
+  "logging": {
+    "logLevel": {
+      "default": "Warning"
+    },
+    "applicationInsights": {
+      "samplingSettings": {
+        "isEnabled": true,
+        "maxTelemetryItemsPerSecond": 5
+      }
+    }
+  }
+}

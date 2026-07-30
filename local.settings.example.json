@@ -1,0 +1,10 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "<approved Azure Storage connection string>",
+    "CONSENT_STORAGE_CONNECTION_STRING": "<approved Azure Table Storage connection string>",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "CONSENT_TABLE_NAME": "ConsentReceipts",
+    "CONSENT_ALLOWED_ORIGINS": "{\"example-entity\":[\"https://www.example.com\"]}"
+  }
+}
