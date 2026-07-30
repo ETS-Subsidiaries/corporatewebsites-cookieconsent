@@ -4,7 +4,7 @@
     // EDITABLE ENTITY CONFIGURATION
     // Add any number of BCP 47 locale keys. Every locale must provide every field below.
     const CONFIG = {
-        runtimeVersion: '1.0.0',
+        runtimeVersion: '1.1.0',
         protocolVersion: 1,
         noticeVersion: '2026-07-30',
         defaultLocale: 'en',
@@ -533,23 +533,38 @@
         window.gtag('set', 'ads_data_redaction', true);
     }
 
+    function gaIdFromGtagScript(script) {
+        if (!script || !script.src) return '';
+        try {
+            const source = new URL(script.src, document.baseURI);
+            if (['www.googletagmanager.com', 'googletagmanager.com'].indexOf(source.hostname) < 0 || source.pathname !== '/gtag/js') {
+                return '';
+            }
+            return validGaId(source.searchParams.get('id'));
+        } catch (error) {
+            return '';
+        }
+    }
+
+    function hasGtagLoader(measurementId) {
+        return Array.prototype.some.call(document.scripts, function (script) {
+            return gaIdFromGtagScript(script) === measurementId;
+        });
+    }
+
+    function dataLayerCommand(entry) {
+        return entry && typeof entry.length === 'number' ? Array.prototype.slice.call(entry) : [];
+    }
+
     function preloadedGaIds() {
         const ids = new Set();
         Array.prototype.forEach.call(document.scripts, function (script) {
-            if (!script.src) return;
-            try {
-                const source = new URL(script.src, document.baseURI);
-                if (['www.googletagmanager.com', 'googletagmanager.com'].indexOf(source.hostname) >= 0 && source.pathname === '/gtag/js') {
-                    const id = validGaId(source.searchParams.get('id'));
-                    if (id) ids.add(id);
-                }
-            } catch (error) {
-                return;
-            }
+            const id = gaIdFromGtagScript(script);
+            if (id) ids.add(id);
         });
         if (Array.isArray(window.dataLayer)) {
             window.dataLayer.forEach(function (entry) {
-                const command = entry && typeof entry.length === 'number' ? Array.prototype.slice.call(entry) : [];
+                const command = dataLayerCommand(entry);
                 if (command[0] === 'config') {
                     const id = validGaId(command[1]);
                     if (id) ids.add(id);
@@ -814,12 +829,14 @@
             this.mode = this.state ? 'closed' : 'prompt';
             this.pendingFocus = '';
             this.returnFocus = null;
-            this.gaConfigured = false;
-            this.knownGaIds = new Set(config.preloadedGaIds || []);
-            if (config.gaId) this.knownGaIds.add(config.gaId);
+            this.configuredGaIds = new Set();
+            this.knownGaIds = new Set();
+            (config.preloadedGaIds || []).forEach(this.registerKnownGaId.bind(this));
+            this.registerKnownGaId(config.gaId);
             this.element = document.createElement('ets-cookie-consent');
             this.element.setController(this);
 
+            this.installGa4Guards();
             this.denyAnalytics();
             if (!this.state || !this.state.purposeDecisions.analytics) this.removeGaCookies();
             if (this.gpc && (!this.state || this.state.purposeDecisions.analytics)) {
@@ -844,6 +861,70 @@
 
         copy() {
             return this.config.locales[this.locale] || this.config.locales[this.config.defaultLocale];
+        }
+
+        analyticsAllowed() {
+            return Boolean(!this.gpc && this.state && this.state.purposeDecisions.analytics);
+        }
+
+        registerKnownGaId(value) {
+            const measurementId = validGaId(value);
+            if (!measurementId) return '';
+            this.knownGaIds.add(measurementId);
+            if (!this.analyticsAllowed()) window['ga-disable-' + measurementId] = true;
+            return measurementId;
+        }
+
+        installDataLayerGuard() {
+            const dataLayer = window.dataLayer;
+            if (!Array.isArray(dataLayer) || typeof dataLayer.push !== 'function') return;
+            const push = dataLayer.push;
+            const controller = this;
+            dataLayer.push = function () {
+                Array.prototype.forEach.call(arguments, function (entry) {
+                    const command = dataLayerCommand(entry);
+                    // Set the per-ID Google flag before a loaded tag processes a new config command.
+                    if (command[0] === 'config') controller.registerKnownGaId(command[1]);
+                });
+                return push.apply(this, arguments);
+            };
+        }
+
+        inspectGa4Node(node) {
+            if (!node || node.nodeType !== 1) return;
+            const scripts = node.tagName === 'SCRIPT'
+                ? [node]
+                : typeof node.querySelectorAll === 'function'
+                    ? Array.prototype.slice.call(node.querySelectorAll('script'))
+                    : [];
+            scripts.forEach(function (script) {
+                this.registerKnownGaId(gaIdFromGtagScript(script));
+            }.bind(this));
+        }
+
+        observeGa4Loaders() {
+            if (typeof window.MutationObserver !== 'function' || !document.documentElement) return;
+            const inspect = this.inspectGa4Node.bind(this);
+            this.ga4LoaderObserver = new window.MutationObserver(function (records) {
+                records.forEach(function (record) {
+                    if (record.type === 'attributes') {
+                        if (record.target.tagName === 'SCRIPT') inspect(record.target);
+                        return;
+                    }
+                    Array.prototype.forEach.call(record.addedNodes, inspect);
+                });
+            });
+            this.ga4LoaderObserver.observe(document.documentElement, {
+                attributes: true,
+                attributeFilter: ['src'],
+                childList: true,
+                subtree: true
+            });
+        }
+
+        installGa4Guards() {
+            this.installDataLayerGuard();
+            this.observeGa4Loaders();
         }
 
         resolveLocale() {
@@ -971,20 +1052,34 @@
             emit('statechange', this.publicState());
         }
 
+        refreshKnownGaIds() {
+            preloadedGaIds().forEach(function (measurementId) {
+                this.registerKnownGaId(measurementId);
+            }.bind(this));
+            this.registerKnownGaId(this.config.gaId);
+            return Array.from(this.knownGaIds);
+        }
+
         denyAnalytics() {
-            this.knownGaIds.forEach(function (measurementId) {
+            this.refreshKnownGaIds().forEach(function (measurementId) {
                 window['ga-disable-' + measurementId] = true;
             });
             if (typeof window.gtag === 'function') window.gtag('consent', 'update', consentCommand('denied'));
         }
 
         grantAnalytics() {
-            if (this.gpc || !this.config.gaId || !this.state || !this.state.purposeDecisions.analytics) return;
-            const measurementId = this.config.gaId;
-            window['ga-disable-' + measurementId] = false;
+            if (this.gpc || !this.state || !this.state.purposeDecisions.analytics) return;
+            const measurementIds = this.refreshKnownGaIds();
+            measurementIds.forEach(function (measurementId) {
+                window['ga-disable-' + measurementId] = false;
+            });
             window.gtag('consent', 'update', consentCommand('granted'));
-            if (this.gaConfigured) return;
-            this.gaConfigured = true;
+            measurementIds.forEach(this.activateGa4.bind(this));
+        }
+
+        activateGa4(measurementId) {
+            if (this.configuredGaIds.has(measurementId)) return;
+            this.configuredGaIds.add(measurementId);
 
             const configure = function () {
                 window.gtag('js', new Date());
@@ -994,8 +1089,7 @@
                 });
                 emit('provider-activated', { provider: 'ga4', measurementId: measurementId });
             };
-            const alreadyLoaded = preloadedGaIds().indexOf(measurementId) >= 0;
-            if (alreadyLoaded) {
+            if (hasGtagLoader(measurementId)) {
                 configure();
                 return;
             }
@@ -1004,7 +1098,7 @@
             script.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(measurementId);
             script.addEventListener('load', configure, { once: true });
             script.addEventListener('error', function () {
-                this.gaConfigured = false;
+                this.configuredGaIds.delete(measurementId);
                 emit('diagnostic', { code: 'ga4-load-failed', provider: 'ga4' });
             }.bind(this), { once: true });
             document.head.appendChild(script);
