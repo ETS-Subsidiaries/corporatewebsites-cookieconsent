@@ -107,10 +107,23 @@
             min-height: 44px;
             padding: 10px 16px;
             position: fixed;
+            transition: filter 180ms ease, transform 180ms ease;
             z-index: var(--ets-consent-z-index);
         }
         .settings-button:hover { filter: brightness(.92); transform: translateY(-1px); }
         .settings-button svg { height: 17px; width: 17px; }
+        .settings-label {
+            display: inline-block;
+            opacity: 1;
+            overflow: hidden;
+            transform: translateX(0);
+            transition: opacity 150ms ease, transform 180ms ease;
+            white-space: nowrap;
+        }
+        .settings-button.is-compact { gap: 0; padding-inline: 12px; }
+        .settings-button.is-compact .settings-label { opacity: 0; transform: translateX(4px); visibility: hidden; width: 0; }
+        .settings-button.is-compact:is(:hover, :focus-visible) { gap: 8px; padding-inline: 16px; }
+        .settings-button.is-compact:is(:hover, :focus-visible) .settings-label { opacity: 1; transform: translateX(0); visibility: visible; width: auto; }
         .panel {
             background:
                 linear-gradient(90deg, var(--ets-consent-panel-accent), var(--ets-consent-panel-accent)) top / 100% 4px no-repeat,
@@ -276,6 +289,7 @@
         @media (prefers-reduced-motion: reduce) {
             .panel { animation: none; }
             .settings-button:hover { transform: none; }
+            .settings-button, .settings-label { transition: none; }
         }
         @media (forced-colors: active) {
             .panel, .action, .settings-button, .locale-toggle, .locale-select { forced-color-adjust: auto; }
@@ -629,6 +643,8 @@
         constructor() {
             super();
             this.controller = null;
+            this.settingsCompact = false;
+            this.onScroll = this.updateSettingsCompact.bind(this);
             this.attachShadow({ mode: 'open' });
         }
 
@@ -638,7 +654,19 @@
         }
 
         connectedCallback() {
+            this.updateSettingsCompact();
+            window.addEventListener('scroll', this.onScroll, { passive: true });
             this.render();
+        }
+
+        disconnectedCallback() {
+            window.removeEventListener('scroll', this.onScroll);
+        }
+
+        updateSettingsCompact() {
+            this.settingsCompact = window.scrollY > 0;
+            const settings = this.shadowRoot && this.shadowRoot.querySelector('.settings-button');
+            if (settings) settings.classList.toggle('is-compact', this.settingsCompact);
         }
 
         actionButton(label, className, part, handler, disabled) {
@@ -714,11 +742,14 @@
             if (controller.mode === 'closed') {
                 const settings = document.createElement('button');
                 settings.type = 'button';
-                settings.className = 'settings-button';
+                settings.className = 'settings-button' + (this.settingsCompact ? ' is-compact' : '');
                 settings.setAttribute('part', 'settings-button');
                 settings.setAttribute('aria-haspopup', 'dialog');
                 settings.setAttribute('aria-label', copy.settingsLabel);
-                settings.append(cookieIcon(), document.createTextNode(copy.settingsLabel));
+                const label = document.createElement('span');
+                label.className = 'settings-label';
+                label.textContent = copy.settingsLabel;
+                settings.append(cookieIcon(), label);
                 settings.addEventListener('click', function () { controller.openSettings(); });
                 shell.appendChild(settings);
                 this.shadowRoot.replaceChildren(style, shell);

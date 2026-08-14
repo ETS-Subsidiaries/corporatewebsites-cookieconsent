@@ -195,6 +195,8 @@ The default position is `bottom-left`. Set another corner in `CONFIG.position`, 
 
 The built-in palette matches the EIC portal theme: EIC navy (`#29526E`) for the persistent settings control, EIC accent blue (`#008FC4`) for primary actions and links, accent hover (`#0079A5`), dark text (`#383B42`), subtle blue (`#D7EEF7`), and portal border gray (`#DEE2E8`).
 
+After a visitor has made a choice, the persistent settings button collapses to its cookie icon whenever the page is scrolled away from the top. Its label expands again on hover or keyboard focus, and remains visible at the top of the page.
+
 ### CSS custom properties
 
 Set variables on the custom element from the website's stylesheet:
