@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cookie consent preview</title>
+  <style>
+    :root {
+      color: #183143;
+      background: #f4f8fa;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body { margin: 0; }
+
+    header {
+      min-height: 76vh;
+      display: grid;
+      align-items: end;
+      padding: clamp(2rem, 8vw, 7rem);
+      color: #fff;
+      background:
+        linear-gradient(135deg, rgba(19, 55, 77, .96), rgba(41, 82, 110, .82)),
+        radial-gradient(circle at 80% 20%, #008fc4, transparent 36%);
+    }
+
+    .hero { max-width: 720px; }
+
+    .eyebrow {
+      margin: 0 0 1rem;
+      color: #9ee8ff;
+      font: 700 .78rem/1.2 system-ui, sans-serif;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 11ch;
+      margin: 0;
+      font-size: clamp(3.5rem, 10vw, 8rem);
+      line-height: .9;
+      letter-spacing: -.06em;
+    }
+
+    .hero p {
+      max-width: 45ch;
+      margin: 2rem 0 0;
+      color: #e7f5f9;
+      font: 1.1rem/1.6 system-ui, sans-serif;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1px;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 7rem 2rem 18rem;
+    }
+
+    article {
+      min-height: 280px;
+      padding: 2rem;
+      background: #fff;
+      border: 1px solid #d8e5ea;
+    }
+
+    article h2 { margin-top: 0; font-size: 1.65rem; }
+    article p { color: #536873; font: 1rem/1.7 system-ui, sans-serif; }
+
+    .hint {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 1;
+      max-width: 260px;
+      padding: .75rem 1rem;
+      color: #29526e;
+      background: rgba(255, 255, 255, .88);
+      border: 1px solid #c8dce4;
+      border-radius: 999px;
+      box-shadow: 0 8px 22px rgba(26, 51, 85, .1);
+      font: 700 .75rem/1.4 system-ui, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div class="hint">Accept the notice, then scroll to see the settings label collapse.</div>
+
+  <header>
+    <div class="hero">
+      <p class="eyebrow">Interaction preview</p>
+      <h1>Quietly present. Easy to find.</h1>
+      <p>The cookie settings control stays available without competing with the page. Scroll down, hover it, or focus it with the keyboard.</p>
+    </div>
+  </header>
+
+  <main>
+    <article>
+      <h2>Scroll state</h2>
+      <p>At the top of the page, the control shows its full “Cookie settings” label. Once the page scrolls down, the label fades away and the control becomes icon-only.</p>
+    </article>
+    <article>
+      <h2>Reveal state</h2>
+      <p>Hover over the icon-only control or tab to it. The label animates back into view so the action remains clear at the moment it is needed.</p>
+    </article>
+    <article>
+      <h2>Accessible by design</h2>
+      <p>The button keeps its accessible name and remains keyboard operable. Visitors who prefer reduced motion receive the same behavior without transitions.</p>
+    </article>
+    <article>
+      <h2>Return home</h2>
+      <p>Scroll back to the top and the full label remains visible, making the persistent control immediately understandable again.</p>
+    </article>
+  </main>
+
+  <script src="./cookie-consent.js"></script>
+</body>
+</html>

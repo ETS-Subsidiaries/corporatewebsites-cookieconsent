@@ -107,7 +107,7 @@
             min-height: 44px;
             padding: 10px 16px;
             position: fixed;
-            transition: filter 180ms ease, transform 180ms ease;
+            transition: filter 180ms ease, gap 220ms ease, padding 220ms ease, transform 180ms ease;
             z-index: var(--ets-consent-z-index);
         }
         .settings-button:hover { filter: brightness(.92); transform: translateY(-1px); }
@@ -116,14 +116,15 @@
             display: inline-block;
             opacity: 1;
             overflow: hidden;
+            max-width: 16rem;
             transform: translateX(0);
-            transition: opacity 150ms ease, transform 180ms ease;
+            transition: max-width 220ms ease, opacity 150ms ease, transform 180ms ease;
             white-space: nowrap;
         }
         .settings-button.is-compact { gap: 0; padding-inline: 12px; }
-        .settings-button.is-compact .settings-label { opacity: 0; transform: translateX(4px); visibility: hidden; width: 0; }
+        .settings-button.is-compact .settings-label { max-width: 0; opacity: 0; transform: translateX(4px); visibility: hidden; }
         .settings-button.is-compact:is(:hover, :focus-visible) { gap: 8px; padding-inline: 16px; }
-        .settings-button.is-compact:is(:hover, :focus-visible) .settings-label { opacity: 1; transform: translateX(0); visibility: visible; width: auto; }
+        .settings-button.is-compact:is(:hover, :focus-visible) .settings-label { max-width: 16rem; opacity: 1; transform: translateX(0); visibility: visible; }
         .panel {
             background:
                 linear-gradient(90deg, var(--ets-consent-panel-accent), var(--ets-consent-panel-accent)) top / 100% 4px no-repeat,
