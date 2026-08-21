@@ -2,58 +2,72 @@
 
 A static, dependency-free cookie consent runtime for public corporate websites, with optional consent receipt logging through an Azure Function and Azure Table Storage.
 
-The browser's local choice is authoritative. The banner, settings, locale selection, and Google Analytics decision continue to work when the receipt endpoint is missing, offline, or not deployed.
+The browser's local choice is authoritative. The banner, settings, locale selection, and Google tag decision continue to work when the receipt endpoint is missing, offline, or not deployed.
 
 ## Contents
 
 | File | Purpose |
 | --- | --- |
 | `cookie-consent.js` | Static browser runtime served through jsDelivr or a website's own static hosting |
+| `cookie-consent.min.js` | Minified build of the browser runtime |
 | `function_app.py` | Optional Azure Functions Python v2 receipt endpoint |
 | `host.json` | Azure Functions host and telemetry settings |
 | `local.settings.example.json` | Secret-free local settings template |
 | `requirements.txt` | Python runtime dependencies |
+| `tests/test_cookie_consent_runtime.js` | Dependency-free browser runtime regression tests |
 | `tests/test_function_app.py` | Backend contract tests |
 
-This repository does not use Node.js, npm, or a JavaScript build step.
+The browser runtime has no production dependencies or browser build step. Node.js runs the dependency-free runtime tests, and release maintainers use a pinned Terser command to regenerate the minified file; no npm project is required.
 
 ## Quick start
 
 These examples assume that a release tag has been published. Repository maintainers should complete [Publish through jsDelivr](#publish-through-jsdelivr) before giving a CDN URL to a website owner.
 
-Place the script in the document `<head>` before Google Analytics, Google Tag Manager, or any other analytics loader.
+Place the script in the document `<head>` before Google Analytics, Google Ads, Google Tag Manager, or any other analytics loader. For strict opt-in, no plugin or other integration may insert a Google tag independently; configure the tag on this runtime instead.
 
 ### Consent UI only
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.1.0/cookie-consent.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.2.0/cookie-consent.js"></script>
 ```
 
 The banner and local consent settings work without any attributes. Analytics loading and receipt logging remain disabled.
 
-### Consent UI with GA4
+### Consent UI with a Google tag
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.1.0/cookie-consent.js"
-  data-ga-id="G-MEASURE123"
+  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.2.0/cookie-consent.js"
+  data-google-tag-id="GT-TAG123456"
   data-position="bottom-right"
 ></script>
 ```
 
-The runtime sets Google Consent Mode to denied before later scripts run. It loads GA4 only after the visitor agrees.
+The runtime establishes denied Google Consent Mode defaults immediately. It does not request `gtag.js` until the visitor agrees, which is the strict or basic consent path. `data-google-tag-id` accepts `GT-`, `G-`, `AW-`, and `DC-` IDs. The legacy `data-ga-id` attribute remains supported for `G-` IDs.
 
-### Existing GA4 integration
+### Existing Google tag integration
 
-The runtime detects GA4 measurement IDs from existing `gtag.js` sources and `gtag('config', 'G-...')` commands. Before consent, it sets Google’s per-measurement disable flag for detected IDs, including late `dataLayer` configurations and dynamically inserted `gtag.js` loaders. When the visitor agrees, it enables and configures those IDs, adding `gtag.js` when a configuration exists without a matching loader. This compatibility path does not make a late-loaded consent script compliant: it cannot undo a request or data transmission that occurred before the runtime loaded, and it cannot safely unload JavaScript that already executed. Load this script before every Google Analytics or Google Tag Manager loader, and prefer the explicit `data-ga-id` setup for new integrations.
+The runtime detects supported IDs from existing `gtag.js` sources and `gtag('config', '...')` commands. It places denied defaults ahead of commands that are still queued, sets Google's per-measurement disable flag for detected `G-` IDs, and guards later configurations and dynamically inserted loaders. When the visitor agrees, it enables and configures known IDs.
 
-### Consent UI, GA4, and receipt logging
+This compatibility path is not strict opt-in. A Google tag that another integration already requested can send cookieless pings while storage is denied, and the runtime cannot retract a request or transmission that occurred before it loaded. To send nothing to Google before agreement, remove or disable every other Google loader and use `data-google-tag-id`.
+
+### WordPress Site Kit strict opt-in
+
+Site Kit inserts its own Google tag unless its Analytics snippet is blocked. Add the supported filter in a small custom plugin or child theme:
+
+```php
+add_filter( 'googlesitekit_analytics-4_tag_blocked', '__return_true' );
+```
+
+Then configure the same Google tag ID on this runtime with `data-google-tag-id`. If Site Kit's Tag Manager, AdSense, or another plugin also inserts Google scripts, disable those snippets separately. Confirm from a fresh browser profile that no request to `googletagmanager.com`, `google-analytics.com`, `googleadservices.com`, or `doubleclick.net` occurs before agreement or after decline.
+
+### Consent UI, Google tag, and receipt logging
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.1.0/cookie-consent.js"
+  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.2.0/cookie-consent.js"
   data-site-id="example-entity"
-  data-ga-id="G-MEASURE123"
+  data-google-tag-id="GT-TAG123456"
   data-receipt-endpoint="https://FUNCTION-APP.azurewebsites.net/api/consent-receipts"
   data-position="bottom-left"
 ></script>
@@ -67,9 +81,9 @@ The editable block is at the top of `cookie-consent.js`:
 
 ```javascript
 const CONFIG = {
-    runtimeVersion: '1.1.0',
+    runtimeVersion: '1.2.0',
     protocolVersion: 1,
-    noticeVersion: '2026-07-30',
+    noticeVersion: '2026-08-21',
     defaultLocale: 'en',
     position: 'bottom-left',
     consentLifetimeMonths: 6,
@@ -105,7 +119,8 @@ const CONFIG = {
 | --- | --- | --- |
 | `data-config` | No | Bounded JSON object that overrides editable configuration values |
 | `data-site-id` | Only for logging | Stable entity ID and Azure Table partition key; `A-Z`, `a-z`, `0-9`, `.`, `_`, and `-`, up to 128 characters |
-| `data-ga-id` | Only for GA4 | GA4 measurement ID in `G-...` format |
+| `data-google-tag-id` | Only for Google measurement | Preferred Google tag ID in `GT-`, `G-`, `AW-`, or `DC-` format |
+| `data-ga-id` | No | Backward-compatible alias for a GA4 `G-...` measurement ID |
 | `data-receipt-endpoint` | Only for logging | Overrides `receiptEndpoint`; must be HTTPS, except HTTP localhost during development |
 | `data-position` | No | Overrides `position` with one of the four supported corner values |
 
@@ -115,7 +130,7 @@ Precedence is:
 2. `data-config`
 3. Dedicated `data-receipt-endpoint` and `data-position` attributes
 
-`data-site-id` and `data-ga-id` are dedicated integration attributes rather than fields in the editable block.
+`data-site-id` and the Google tag attributes are dedicated integration attributes rather than fields in the editable block. Do not provide both tag attributes with different values; `data-google-tag-id` takes precedence and emits a diagnostic.
 
 ### `data-config` overrides
 
@@ -123,7 +138,7 @@ Use valid JSON inside a single-quoted HTML attribute:
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.1.0/cookie-consent.js"
+  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.2.0/cookie-consent.js"
   data-config='{
     "position": "top-right",
     "privacyPolicyUrl": "https://www.example.com/privacy",
@@ -287,15 +302,15 @@ Available part names:
 
 ## Consent and analytics behavior
 
-1. The runtime establishes denied Google Consent Mode defaults.
+1. The runtime places denied Google Consent Mode defaults before queued measurement commands.
 2. With no current choice, it shows the notice.
-3. Acceptance is saved locally and activates configured or detected GA4 measurement IDs.
-4. Decline or withdrawal keeps analytics denied and removes accessible first-party `_ga`, `_gid`, and `_gat` cookies.
+3. Acceptance is saved locally and activates configured or detected Google tag IDs.
+4. Decline or withdrawal keeps analytics denied and removes accessible first-party Google Analytics and Ads cookies, including `_ga`, `_gid`, `_gat`, `_gac_*`, `_gcl_*`, `FPGCLAW`, and `FPGCLGB`.
 5. A choice expires after six months by default.
 6. Changing `noticeVersion` invalidates the previous choice and shows the notice again.
 7. Global Privacy Control records a local rejection, keeps analytics disabled, and leaves settings available.
 
-Load this script before any analytics code. If analytics already ran, the runtime detects known GA measurement IDs, disables their future measurement until acceptance, and emits `provider-detected`. It also guards later GA4 configuration commands and newly inserted `gtag.js` loaders. It cannot undo requests that were already sent before the runtime loaded.
+With `data-google-tag-id` and no competing loader, this runtime uses strict opt-in: the Google script and its network requests do not exist before acceptance. If another integration loads Google first, the runtime applies denied consent and guards future configuration, but Google's advanced consent behavior can still send cookieless pings. It cannot undo requests that were already sent before the runtime loaded.
 
 The runtime always denies advertising storage, ad user data, and ad personalization. It grants only `analytics_storage`.
 
@@ -316,10 +331,10 @@ window.ETSCookieConsent.setLocale('en');
 {
   "purposeDecisions": { "analytics": true },
   "decisionSource": "accept",
-  "decisionAt": "2026-07-30T14:00:00.000Z",
-  "expiresAt": "2027-01-30T14:00:00.000Z",
+  "decisionAt": "2026-08-21T14:00:00.000Z",
+  "expiresAt": "2027-02-21T14:00:00.000Z",
   "locale": "en",
-  "noticeVersion": "2026-07-30",
+  "noticeVersion": "2026-08-21",
   "globalPrivacyControl": false
 }
 ```
@@ -342,8 +357,8 @@ Listen before loading the runtime:
 | --- | --- |
 | `ets-cookie-consent:statechange` | Local analytics choice changed |
 | `ets-cookie-consent:localechange` | Visitor selected another configured locale |
-| `ets-cookie-consent:provider-detected` | GA was present before the runtime |
-| `ets-cookie-consent:provider-activated` | Configured or detected GA4 was activated |
+| `ets-cookie-consent:provider-detected` | A Google tag was present before the runtime |
+| `ets-cookie-consent:provider-activated` | A configured or detected Google tag was activated |
 | `ets-cookie-consent:receipt-sent` | Backend acknowledged a receipt |
 | `ets-cookie-consent:receipt-failed` | Receipt failed; detail says whether it is retryable |
 | `ets-cookie-consent:receipt-skipped` | Logging is disabled because site ID or endpoint is absent |
@@ -379,9 +394,9 @@ The browser sends:
   "purposeDecisions": { "analytics": true },
   "decisionSource": "accept",
   "locale": "en",
-  "clientDecisionAt": "2026-07-30T14:00:00.000Z",
-  "noticeVersion": "2026-07-30",
-  "runtimeVersion": "1.1.0",
+  "clientDecisionAt": "2026-08-21T14:00:00.000Z",
+  "noticeVersion": "2026-08-21",
+  "runtimeVersion": "1.2.0",
   "protocolVersion": 1
 }
 ```
@@ -480,14 +495,15 @@ Origin validation reduces browser abuse; it is not strong client authentication 
 
 If Azure portal CORS settings are used, do not configure `*`. Ensure platform CORS does not replace the Function's exact-origin response policy.
 
-## Python setup and tests
+## Development setup and tests
 
-Python 3.11 or 3.12 is recommended.
+Python 3.11 or 3.12 is recommended for the Function tests. Node.js 20 or newer runs the browser runtime tests without installing packages.
 
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m unittest discover -s .\tests -p "test_*.py" -v
+node --test .\tests\test_cookie_consent_runtime.js
 ```
 
 To run the Function locally, copy `local.settings.example.json` to `local.settings.json`, replace placeholders with organization-approved Azure Storage connection strings, and start it with an approved Azure Functions Core Tools installation:
@@ -496,7 +512,7 @@ To run the Function locally, copy `local.settings.example.json` to `local.settin
 func start
 ```
 
-No Node.js tooling is required by this repository.
+The browser runtime itself remains dependency-free.
 
 ## Browser smoke check
 
@@ -513,8 +529,8 @@ Create a temporary HTML page that loads `http://127.0.0.1:8000/cookie-consent.js
 3. A second locale creates toggle buttons; a third creates a dropdown.
 4. `data-config` overrides text and privacy URL.
 5. Agreeing stores the state and reveals the settings button.
-6. With `data-ga-id`, no GA script appears before agreement and one appears after agreement.
-7. With an existing or late-added GA4 `gtag('config', 'G-...')` command or `gtag.js` loader, its `ga-disable-G-...` flag is true before agreement, false after agreement, and true again after withdrawal.
+6. With `data-google-tag-id`, no Google script or request appears before agreement or after decline, and one appears after agreement.
+7. With an existing or late-added `gtag('config', 'G-...')` command or `gtag.js` loader, its `ga-disable-G-...` flag is true before agreement, false after agreement, and true again after withdrawal.
 8. With an unavailable receipt endpoint, the local choice still succeeds and a queued receipt remains.
 9. Global Privacy Control produces a local rejection and disables acceptance.
 
@@ -539,12 +555,20 @@ jsDelivr serves files directly from public GitHub repositories. There is no jsDe
 Before publishing:
 
 - The GitHub repository must be public.
-- `cookie-consent.js` must be committed at the repository root on the release commit.
+- `cookie-consent.js` and its regenerated `cookie-consent.min.js` build must be committed at the repository root on the release commit.
 - The `runtimeVersion` in `cookie-consent.js` must match the planned release.
 - Any legally meaningful change must also have a new `noticeVersion`.
 - The maintainer publishing the release must be allowed to push Git tags.
 
 Private repositories cannot use jsDelivr's GitHub CDN endpoint.
+
+Regenerate and check the minified build before tagging:
+
+```powershell
+npx --yes terser@5.43.1 .\cookie-consent.js --compress --mangle --output .\cookie-consent.min.js
+node --check .\cookie-consent.js
+node --check .\cookie-consent.min.js
+```
 
 ### 2. Create an immutable release tag
 
@@ -552,8 +576,8 @@ After the release changes have been merged into `main`, tag that exact commit:
 
 ```powershell
 git fetch origin main
-git tag -a v1.1.0 -m "Release v1.1.0" origin/main
-git push origin v1.1.0
+git tag -a v1.2.0 -m "Release v1.2.0" origin/main
+git push origin v1.2.0
 ```
 
 Use a new semantic version tag for every release. Never move, delete, or force-update a tag that a website may already reference. Creating a GitHub Release from the tag is useful for release notes, but jsDelivr only requires the public repository and Git tag.
@@ -569,7 +593,7 @@ https://cdn.jsdelivr.net/gh/<owner>/<repository>@<tag>/<file-path>
 The release URL is:
 
 ```text
-https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.1.0/cookie-consent.js
+https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.2.0/cookie-consent.js
 ```
 
 Requesting that URL is enough for jsDelivr to discover and cache the file. No separate registration or deployment is needed.
@@ -579,11 +603,11 @@ Requesting that URL is enough for jsDelivr to discover and cache the file. No se
 Run this after pushing the tag:
 
 ```powershell
-$Url = "https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.1.0/cookie-consent.js"
+$Url = "https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.2.0/cookie-consent.js"
 $Response = Invoke-WebRequest -Uri $Url
 $Response.StatusCode
 $Response.Headers["Content-Type"]
-$Response.Content.Contains("runtimeVersion: '1.1.0'")
+$Response.Content.Contains("runtimeVersion: '1.2.0'")
 ```
 
 The expected status is `200`, the content type should identify JavaScript, and the final command should return `True`. Also open the URL in a browser and confirm that it shows the expected source rather than an error page.
@@ -599,7 +623,7 @@ If the request returns `404`, confirm that:
 
 | URL version | Update behavior | Recommended use |
 | --- | --- | --- |
-| `@v1.1.0` | Always serves that release | Production default; deliberate, auditable updates |
+| `@v1.2.0` | Always serves that release | Production default; deliberate, auditable updates |
 | `@<full-commit-sha>` | Always serves that commit | Emergency pinning or pre-release review |
 | `@1` | Follows the newest compatible `1.x` tag after CDN cache refresh | Centrally managed sites that have approved automatic minor and patch updates |
 | `@main`, `@latest`, or no version | Follows mutable or latest content | Do not use for production consent notices |
@@ -608,7 +632,7 @@ An exact tag is safest, but each website must update its script URL to adopt a l
 
 ### 6. Add the URL to the website
 
-Copy the appropriate example from [Quick start](#quick-start), keep the selected version in the URL, and place the script in the document `<head>` before Google Analytics, Google Tag Manager, or another analytics loader. Publish the CMS or website changes, then confirm in browser developer tools that:
+Copy the appropriate example from [Quick start](#quick-start), keep the selected version in the URL, and place the script in the document `<head>` before Google Analytics, Google Ads, Google Tag Manager, or another analytics loader. Publish the CMS or website changes, then confirm in browser developer tools that:
 
 1. The jsDelivr request returns HTTP 200.
 2. The consent script loads before analytics.
