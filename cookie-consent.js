@@ -4,9 +4,9 @@
     // EDITABLE ENTITY CONFIGURATION
     // Add any number of BCP 47 locale keys. Every locale must provide every field below.
     const CONFIG = {
-        runtimeVersion: '1.1.0',
+        runtimeVersion: '1.2.0',
         protocolVersion: 1,
-        noticeVersion: '2026-07-30',
+        noticeVersion: '2026-08-21',
         defaultLocale: 'en',
         position: 'bottom-left',
         consentLifetimeMonths: 6,
@@ -331,8 +331,19 @@
         return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value);
     }
 
-    function validGaId(value) {
-        return typeof value === 'string' && /^G-[A-Z0-9]{6,}$/i.test(value) ? value.toUpperCase() : '';
+    function validGoogleTagId(value) {
+        return typeof value === 'string' && /^(?:(?:G|GT)-[A-Z0-9]{6,}|(?:AW|DC)-\d{6,})$/i.test(value)
+            ? value.toUpperCase()
+            : '';
+    }
+
+    function isGa4MeasurementId(value) {
+        return /^G-[A-Z0-9]+$/.test(value);
+    }
+
+    function validGa4MeasurementId(value) {
+        const tagId = validGoogleTagId(value);
+        return isGa4MeasurementId(tagId) ? tagId : '';
     }
 
     function validSemver(value) {
@@ -474,14 +485,26 @@
         const configuredDefault = normalizeLocale(rawConfig.defaultLocale);
         const defaultLocale = locales[configuredDefault] ? configuredDefault : locales.en ? 'en' : localeKeys[0];
         const rawSiteId = script && script.dataset ? text(script.dataset.siteId, 128) : '';
-        const rawGaId = script && script.dataset ? text(script.dataset.gaId, 32) : '';
+        const rawGoogleTagId = script && script.dataset ? text(script.dataset.googleTagId, 64) : '';
+        const rawLegacyGaId = script && script.dataset ? text(script.dataset.gaId, 64) : '';
+        const usesGoogleTagAttribute = hasDataAttribute(script, 'google-tag-id');
+        const configuredGoogleTagId = usesGoogleTagAttribute ? rawGoogleTagId : rawLegacyGaId;
+        const googleTagId = usesGoogleTagAttribute
+            ? validGoogleTagId(configuredGoogleTagId)
+            : validGa4MeasurementId(configuredGoogleTagId);
         const endpointValue = hasDataAttribute(script, 'receipt-endpoint') ? script.dataset.receiptEndpoint : rawConfig.receiptEndpoint;
         const positionValue = hasDataAttribute(script, 'position') ? script.dataset.position : rawConfig.position;
         const endpoint = validEndpoint(endpointValue);
         const diagnostics = [];
 
         if (rawSiteId && !validSiteId(rawSiteId)) diagnostics.push('invalid-site-id');
-        if (rawGaId && !validGaId(rawGaId)) diagnostics.push('invalid-ga-id');
+        if (configuredGoogleTagId && !googleTagId) {
+            diagnostics.push(usesGoogleTagAttribute ? 'invalid-google-tag-id' : 'invalid-ga-id');
+        }
+        if (rawGoogleTagId && rawLegacyGaId &&
+            validGoogleTagId(rawGoogleTagId) !== validGa4MeasurementId(rawLegacyGaId)) {
+            diagnostics.push('conflicting-google-tag-id');
+        }
         if (text(endpointValue) && !endpoint) diagnostics.push('invalid-receipt-endpoint');
         if (positionValue !== undefined && positionValue !== '' && POSITIONS.indexOf(positionValue) < 0) diagnostics.push('invalid-position');
         if (!validSemver(rawConfig.runtimeVersion)) throw new Error('runtimeVersion must use semantic versioning.');
@@ -501,7 +524,7 @@
             privacyPolicyUrl: validPrivacyUrl(rawConfig.privacyPolicyUrl),
             locales: locales,
             siteId: validSiteId(rawSiteId) ? rawSiteId : '',
-            gaId: validGaId(rawGaId),
+            googleTagId: googleTagId,
             diagnostics: diagnostics
         };
     }
@@ -541,29 +564,35 @@
         };
     }
 
+    function gtagCommand() {
+        return arguments;
+    }
+
     function installDeniedConsentDefault() {
         window.dataLayer = window.dataLayer || [];
         window.gtag = window.gtag || function () { window.dataLayer.push(arguments); };
-        window.gtag('consent', 'default', Object.assign({ wait_for_update: 500 }, consentCommand('denied')));
-        window.gtag('set', 'ads_data_redaction', true);
+        window.dataLayer.unshift(
+            gtagCommand('consent', 'default', Object.assign({ wait_for_update: 500 }, consentCommand('denied'))),
+            gtagCommand('set', 'ads_data_redaction', true)
+        );
     }
 
-    function gaIdFromGtagScript(script) {
+    function googleTagIdFromGtagScript(script) {
         if (!script || !script.src) return '';
         try {
             const source = new URL(script.src, document.baseURI);
             if (['www.googletagmanager.com', 'googletagmanager.com'].indexOf(source.hostname) < 0 || source.pathname !== '/gtag/js') {
                 return '';
             }
-            return validGaId(source.searchParams.get('id'));
+            return validGoogleTagId(source.searchParams.get('id'));
         } catch (error) {
             return '';
         }
     }
 
-    function hasGtagLoader(measurementId) {
+    function hasGtagLoader(tagId) {
         return Array.prototype.some.call(document.scripts, function (script) {
-            return gaIdFromGtagScript(script) === measurementId;
+            return googleTagIdFromGtagScript(script) === tagId;
         });
     }
 
@@ -571,17 +600,17 @@
         return entry && typeof entry.length === 'number' ? Array.prototype.slice.call(entry) : [];
     }
 
-    function preloadedGaIds() {
+    function preloadedGoogleTagIds() {
         const ids = new Set();
         Array.prototype.forEach.call(document.scripts, function (script) {
-            const id = gaIdFromGtagScript(script);
+            const id = googleTagIdFromGtagScript(script);
             if (id) ids.add(id);
         });
         if (Array.isArray(window.dataLayer)) {
             window.dataLayer.forEach(function (entry) {
                 const command = dataLayerCommand(entry);
                 if (command[0] === 'config') {
-                    const id = validGaId(command[1]);
+                    const id = validGoogleTagId(command[1]);
                     if (id) ids.add(id);
                 }
             });
@@ -861,16 +890,16 @@
             this.mode = this.state ? 'closed' : 'prompt';
             this.pendingFocus = '';
             this.returnFocus = null;
-            this.configuredGaIds = new Set();
-            this.knownGaIds = new Set();
-            (config.preloadedGaIds || []).forEach(this.registerKnownGaId.bind(this));
-            this.registerKnownGaId(config.gaId);
+            this.configuredGoogleTagIds = new Set();
+            this.knownGoogleTagIds = new Set();
+            (config.preloadedGoogleTagIds || []).forEach(this.registerKnownGoogleTagId.bind(this));
+            this.registerKnownGoogleTagId(config.googleTagId);
             this.element = document.createElement('ets-cookie-consent');
             this.element.setController(this);
 
-            this.installGa4Guards();
+            this.installGoogleTagGuards();
             this.denyAnalytics();
-            if (!this.state || !this.state.purposeDecisions.analytics) this.removeGaCookies();
+            if (!this.state || !this.state.purposeDecisions.analytics) this.removeGoogleCookies();
             if (this.gpc && (!this.state || this.state.purposeDecisions.analytics)) {
                 this.decide(false, 'gpc', true);
             } else if (this.state && this.state.purposeDecisions.analytics) {
@@ -899,12 +928,12 @@
             return Boolean(!this.gpc && this.state && this.state.purposeDecisions.analytics);
         }
 
-        registerKnownGaId(value) {
-            const measurementId = validGaId(value);
-            if (!measurementId) return '';
-            this.knownGaIds.add(measurementId);
-            if (!this.analyticsAllowed()) window['ga-disable-' + measurementId] = true;
-            return measurementId;
+        registerKnownGoogleTagId(value) {
+            const tagId = validGoogleTagId(value);
+            if (!tagId) return '';
+            this.knownGoogleTagIds.add(tagId);
+            if (isGa4MeasurementId(tagId) && !this.analyticsAllowed()) window['ga-disable-' + tagId] = true;
+            return tagId;
         }
 
         installDataLayerGuard() {
@@ -916,13 +945,13 @@
                 Array.prototype.forEach.call(arguments, function (entry) {
                     const command = dataLayerCommand(entry);
                     // Set the per-ID Google flag before a loaded tag processes a new config command.
-                    if (command[0] === 'config') controller.registerKnownGaId(command[1]);
+                    if (command[0] === 'config') controller.registerKnownGoogleTagId(command[1]);
                 });
                 return push.apply(this, arguments);
             };
         }
 
-        inspectGa4Node(node) {
+        inspectGoogleTagNode(node) {
             if (!node || node.nodeType !== 1) return;
             const scripts = node.tagName === 'SCRIPT'
                 ? [node]
@@ -930,14 +959,14 @@
                     ? Array.prototype.slice.call(node.querySelectorAll('script'))
                     : [];
             scripts.forEach(function (script) {
-                this.registerKnownGaId(gaIdFromGtagScript(script));
+                this.registerKnownGoogleTagId(googleTagIdFromGtagScript(script));
             }.bind(this));
         }
 
-        observeGa4Loaders() {
+        observeGoogleTagLoaders() {
             if (typeof window.MutationObserver !== 'function' || !document.documentElement) return;
-            const inspect = this.inspectGa4Node.bind(this);
-            this.ga4LoaderObserver = new window.MutationObserver(function (records) {
+            const inspect = this.inspectGoogleTagNode.bind(this);
+            this.googleTagLoaderObserver = new window.MutationObserver(function (records) {
                 records.forEach(function (record) {
                     if (record.type === 'attributes') {
                         if (record.target.tagName === 'SCRIPT') inspect(record.target);
@@ -946,7 +975,7 @@
                     Array.prototype.forEach.call(record.addedNodes, inspect);
                 });
             });
-            this.ga4LoaderObserver.observe(document.documentElement, {
+            this.googleTagLoaderObserver.observe(document.documentElement, {
                 attributes: true,
                 attributeFilter: ['src'],
                 childList: true,
@@ -954,9 +983,9 @@
             });
         }
 
-        installGa4Guards() {
+        installGoogleTagGuards() {
             this.installDataLayerGuard();
-            this.observeGa4Loaders();
+            this.observeGoogleTagLoaders();
         }
 
         resolveLocale() {
@@ -1075,7 +1104,7 @@
                 this.grantAnalytics();
             } else {
                 this.denyAnalytics();
-                this.removeGaCookies();
+                this.removeGoogleCookies();
             }
 
             this.queueReceipt(decision, source, decisionAt);
@@ -1084,63 +1113,68 @@
             emit('statechange', this.publicState());
         }
 
-        refreshKnownGaIds() {
-            preloadedGaIds().forEach(function (measurementId) {
-                this.registerKnownGaId(measurementId);
+        refreshKnownGoogleTagIds() {
+            preloadedGoogleTagIds().forEach(function (tagId) {
+                this.registerKnownGoogleTagId(tagId);
             }.bind(this));
-            this.registerKnownGaId(this.config.gaId);
-            return Array.from(this.knownGaIds);
+            this.registerKnownGoogleTagId(this.config.googleTagId);
+            return Array.from(this.knownGoogleTagIds);
         }
 
         denyAnalytics() {
-            this.refreshKnownGaIds().forEach(function (measurementId) {
-                window['ga-disable-' + measurementId] = true;
+            this.refreshKnownGoogleTagIds().forEach(function (tagId) {
+                if (isGa4MeasurementId(tagId)) window['ga-disable-' + tagId] = true;
             });
             if (typeof window.gtag === 'function') window.gtag('consent', 'update', consentCommand('denied'));
         }
 
         grantAnalytics() {
             if (this.gpc || !this.state || !this.state.purposeDecisions.analytics) return;
-            const measurementIds = this.refreshKnownGaIds();
-            measurementIds.forEach(function (measurementId) {
-                window['ga-disable-' + measurementId] = false;
+            const tagIds = this.refreshKnownGoogleTagIds();
+            tagIds.forEach(function (tagId) {
+                if (isGa4MeasurementId(tagId)) window['ga-disable-' + tagId] = false;
             });
             window.gtag('consent', 'update', consentCommand('granted'));
-            measurementIds.forEach(this.activateGa4.bind(this));
+            tagIds.forEach(this.activateGoogleTag.bind(this));
         }
 
-        activateGa4(measurementId) {
-            if (this.configuredGaIds.has(measurementId)) return;
-            this.configuredGaIds.add(measurementId);
+        activateGoogleTag(tagId) {
+            if (this.configuredGoogleTagIds.has(tagId)) return;
+            this.configuredGoogleTagIds.add(tagId);
 
             const configure = function () {
                 window.gtag('js', new Date());
-                window.gtag('config', measurementId, {
+                window.gtag('config', tagId, {
                     allow_google_signals: false,
                     allow_ad_personalization_signals: false
                 });
-                emit('provider-activated', { provider: 'ga4', measurementId: measurementId });
+                emit('provider-activated', isGa4MeasurementId(tagId)
+                    ? { provider: 'ga4', measurementId: tagId }
+                    : { provider: 'google-tag', tagId: tagId });
             };
-            if (hasGtagLoader(measurementId)) {
+            if (hasGtagLoader(tagId)) {
                 configure();
                 return;
             }
             const script = document.createElement('script');
             script.async = true;
-            script.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(measurementId);
+            script.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(tagId);
             script.addEventListener('load', configure, { once: true });
             script.addEventListener('error', function () {
-                this.configuredGaIds.delete(measurementId);
-                emit('diagnostic', { code: 'ga4-load-failed', provider: 'ga4' });
+                this.configuredGoogleTagIds.delete(tagId);
+                emit('diagnostic', {
+                    code: isGa4MeasurementId(tagId) ? 'ga4-load-failed' : 'google-tag-load-failed',
+                    provider: isGa4MeasurementId(tagId) ? 'ga4' : 'google-tag'
+                });
             }.bind(this), { once: true });
             document.head.appendChild(script);
         }
 
-        removeGaCookies() {
+        removeGoogleCookies() {
             const names = document.cookie.split(';').map(function (item) {
                 return item.trim().split('=')[0];
             }).filter(function (name) {
-                return /^_(?:ga(?:_.+)?|gid|gat(?:_.+)?)$/i.test(name);
+                return /^(?:_(?:ga(?:_.+)?|gid|gat(?:_.+)?|gac_.+|gcl_.+)|FPGCL(?:AW|GB))$/i.test(name);
             });
             if (!names.length) return;
             const hostnameParts = location.hostname.split('.');
@@ -1282,8 +1316,13 @@
     }
 
     installDeniedConsentDefault();
-    const preloaded = preloadedGaIds();
-    if (preloaded.length) emit('provider-detected', { provider: 'ga4', measurementIds: preloaded });
+    const preloaded = preloadedGoogleTagIds();
+    const preloadedGa4 = preloaded.filter(isGa4MeasurementId);
+    const preloadedOtherGoogleTags = preloaded.filter(function (tagId) { return !isGa4MeasurementId(tagId); });
+    if (preloadedGa4.length) emit('provider-detected', { provider: 'ga4', measurementIds: preloadedGa4 });
+    if (preloadedOtherGoogleTags.length) {
+        emit('provider-detected', { provider: 'google-tag', tagIds: preloadedOtherGoogleTags });
+    }
 
     let runtimeConfig;
     try {
@@ -1301,7 +1340,7 @@
         emit('diagnostic', { code: 'invalid-configuration' });
         return;
     }
-    runtimeConfig.preloadedGaIds = preloaded;
+    runtimeConfig.preloadedGoogleTagIds = preloaded;
     runtimeConfig.diagnostics.forEach(function (code) { emit('diagnostic', { code: code }); });
 
     if (!window.customElements.get('ets-cookie-consent')) {
