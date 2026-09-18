@@ -1,12 +1,14 @@
 (function () {
     'use strict';
 
+    const DEFAULT_MEDIA_MESSAGE = 'Accept cookies to view this video.';
+
     // EDITABLE ENTITY CONFIGURATION
-    // Add any number of BCP 47 locale keys. Every locale must provide every field below.
+    // Every locale requires the fields below except the optional mediaBlockedMessage.
     const CONFIG = {
-        runtimeVersion: '1.2.0',
+        runtimeVersion: '1.3.0',
         protocolVersion: 1,
-        noticeVersion: '2026-08-21',
+        noticeVersion: '2026-09-18',
         defaultLocale: 'en',
         position: 'bottom-left',
         consentLifetimeMonths: 6,
@@ -18,17 +20,18 @@
             en: {
                 selectorLabel: 'English',
                 heading: 'We use cookies',
-                body: 'This website uses cookies and other tracking technologies to enable basic functionality of the website, to provide a better experience on the website and to measure and analyze site traffic.',
+                body: 'This website uses cookies and other tracking technologies for basic functionality, to measure and analyze site traffic, and to show embedded YouTube videos. If you agree, analytics and YouTube videos are enabled. YouTube may then use its own cookies and tracking technologies.',
                 acceptLabel: 'I agree',
                 declineLabel: 'I decline',
                 settingsLabel: 'Cookie settings',
                 privacyLabel: 'Privacy policy',
-                withdrawLabel: 'Withdraw analytics consent',
+                withdrawLabel: 'Withdraw cookie consent',
                 closeLabel: 'Close',
                 languageLabel: 'Language',
-                statusAccepted: 'Analytics cookies are enabled.',
-                statusDeclined: 'Analytics cookies are disabled.',
-                gpcMessage: 'Your Global Privacy Control preference is being honored. Analytics remains disabled.'
+                statusAccepted: 'Analytics and embedded videos are enabled.',
+                statusDeclined: 'Analytics and embedded videos are disabled.',
+                gpcMessage: 'Your Global Privacy Control preference is being honored. Analytics and embedded videos remain disabled.',
+                mediaBlockedMessage: DEFAULT_MEDIA_MESSAGE
             }
         }
     };
@@ -54,6 +57,56 @@
         'clientDecisionAt', 'noticeVersion', 'runtimeVersion', 'protocolVersion'
     ];
     const MAX_DATA_CONFIG_LENGTH = 32768;
+    const MEDIA_PROVIDERS = [{
+        name: 'youtube',
+        hosts: ['youtube.com', 'www.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com'],
+        path: /^\/embed\/[^/]+/
+    }];
+    const MEDIA_STYLES = `
+        :host {
+            display: inline-block;
+            line-height: 0;
+            max-width: 100%;
+            position: relative;
+            vertical-align: middle;
+        }
+        * { box-sizing: border-box; }
+        ::slotted(iframe) { visibility: hidden !important; }
+        .placeholder {
+            background: var(--ets-consent-panel-background, #ffffff);
+            border: 1px solid var(--ets-consent-panel-border, #dee2e8);
+            color: var(--ets-consent-panel-color, #383b42);
+            display: flex;
+            font: .96rem/1.4 var(--ets-consent-font-family, system-ui, sans-serif);
+            overflow: auto;
+            padding: clamp(8px, 2vw, 24px);
+            position: absolute;
+            text-align: center;
+        }
+        .placeholder[hidden] { display: none; }
+        .content { display: grid; gap: 8px; justify-items: center; margin: auto; max-width: 36ch; }
+        p { margin: 0; overflow-wrap: anywhere; }
+        button {
+            background: var(--ets-consent-settings-background, #29526e);
+            border: 2px solid transparent;
+            border-radius: var(--ets-consent-panel-radius, 4px);
+            color: var(--ets-consent-settings-color, #ffffff);
+            cursor: pointer;
+            font: 650 .9rem/1.4 var(--ets-consent-font-family, system-ui, sans-serif);
+            max-width: 100%;
+            min-height: 44px;
+            overflow-wrap: anywhere;
+            padding: 10px 16px;
+        }
+        button:hover { filter: brightness(.92); }
+        button:focus-visible {
+            outline: 3px solid var(--ets-consent-focus-color, #008fc4);
+            outline-offset: 3px;
+        }
+        @media (forced-colors: active) {
+            .placeholder, button { forced-color-adjust: auto; }
+        }
+    `;
     const STYLES = `
         :host {
             all: initial;
@@ -420,8 +473,14 @@
                     const locale = normalizeLocale(rawLocale);
                     const localeOverride = override.locales[rawLocale];
                     if (!locale || !plainObject(localeOverride)) throw new Error('locale override is invalid');
-                    if (Object.keys(localeOverride).some(function (field) { return LOCALE_FIELDS.indexOf(field) < 0; })) {
+                    if (Object.keys(localeOverride).some(function (field) {
+                        return field !== 'mediaBlockedMessage' && LOCALE_FIELDS.indexOf(field) < 0;
+                    })) {
                         throw new Error('locale override contains an unsupported key');
+                    }
+                    if (Object.prototype.hasOwnProperty.call(localeOverride, 'mediaBlockedMessage') &&
+                        !text(localeOverride.mediaBlockedMessage)) {
+                        throw new Error('mediaBlockedMessage must be non-empty text');
                     }
                     const mergedLocale = Object.assign({}, merged.locales[locale] || {}, localeOverride);
                     if (!LOCALE_FIELDS.every(function (field) { return Boolean(text(mergedLocale[field])); })) {
@@ -477,6 +536,10 @@
                 normalizedCopy[field] = text(copy[field]);
                 return Boolean(normalizedCopy[field]);
             });
+            if (Object.prototype.hasOwnProperty.call(copy, 'mediaBlockedMessage') && !text(copy.mediaBlockedMessage)) {
+                throw new Error('mediaBlockedMessage must be non-empty text');
+            }
+            normalizedCopy.mediaBlockedMessage = text(copy.mediaBlockedMessage) || DEFAULT_MEDIA_MESSAGE;
             if (isComplete) locales[locale] = normalizedCopy;
         });
         const localeKeys = Object.keys(locales);
@@ -667,6 +730,195 @@
         dots.setAttribute('stroke-width', '3');
         svg.append(outline, dots);
         return svg;
+    }
+
+    function mediaProvider(source) {
+        if (!source) return null;
+        let url;
+        try {
+            url = new URL(source, document.baseURI);
+        } catch (error) {
+            return null;
+        }
+        if (['http:', 'https:'].indexOf(url.protocol) < 0 || url.username || url.password) return null;
+        return MEDIA_PROVIDERS.find(function (provider) {
+            return provider.hosts.indexOf(url.hostname) >= 0 && provider.path.test(url.pathname);
+        }) || null;
+    }
+
+    function restoreAttribute(element, name, value) {
+        if (value === null) element.removeAttribute(name);
+        else element.setAttribute(name, value);
+    }
+
+    class MediaController {
+        constructor(controller) {
+            this.controller = controller;
+            this.records = new Map();
+            this.warnedAboutObserver = false;
+            this.resizeObserver = typeof window.ResizeObserver === 'function'
+                ? new window.ResizeObserver(this.layout.bind(this))
+                : null;
+            window.addEventListener('resize', this.layout.bind(this), { passive: true });
+        }
+
+        inspectNode(node) {
+            if (!node || node.nodeType !== 1) return;
+            const frames = node.tagName === 'IFRAME' ? [node] : Array.from(node.querySelectorAll('iframe'));
+            frames.forEach(this.inspect.bind(this));
+        }
+
+        inspect(frame) {
+            if (!frame.isConnected) return;
+            const source = frame.getAttribute('src');
+            const provider = frame.hasAttribute('srcdoc') ? null : mediaProvider(source);
+            let record = this.records.get(frame);
+            if (frame.hasAttribute('srcdoc') || (!provider && !(record && record.blocked && source === null))) {
+                if (record) this.release(record, false);
+                return;
+            }
+            if (!record) {
+                record = { frame: frame, source: source, provider: provider, blocked: false, host: null };
+                this.records.set(frame, record);
+                if (typeof window.MutationObserver !== 'function' && !this.warnedAboutObserver) {
+                    this.warnedAboutObserver = true;
+                    emit('diagnostic', { code: 'media-observer-unavailable' });
+                }
+            } else if (provider) {
+                record.source = source;
+                record.provider = provider;
+            }
+            if (this.controller.analyticsAllowed()) {
+                this.removePlaceholder(record);
+                if (record.blocked) {
+                    record.blocked = false;
+                    if (frame.getAttribute('src') !== record.source) frame.setAttribute('src', record.source);
+                }
+                return;
+            }
+            record.blocked = true;
+            if (source !== null) frame.removeAttribute('src');
+            if (!record.host) this.addPlaceholder(record);
+        }
+
+        addPlaceholder(record) {
+            const frame = record.frame;
+            const host = document.createElement('ets-consent-media');
+            const shadow = host.attachShadow({ mode: 'open' });
+            const style = document.createElement('style');
+            style.textContent = MEDIA_STYLES;
+            const slot = document.createElement('slot');
+            const overlay = document.createElement('section');
+            overlay.className = 'placeholder';
+            overlay.setAttribute('part', 'media-placeholder');
+            overlay.setAttribute('aria-label', frame.getAttribute('title') || record.provider.name);
+            const content = document.createElement('div');
+            content.className = 'content';
+            const message = document.createElement('p');
+            message.setAttribute('part', 'media-message');
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.setAttribute('part', 'media-settings-button');
+            button.setAttribute('aria-haspopup', 'dialog');
+            button.addEventListener('click', function () { this.controller.openSettings(button); }.bind(this));
+            content.append(message, button);
+            overlay.appendChild(content);
+            shadow.append(style, slot, overlay);
+            record.host = host;
+            record.overlay = overlay;
+            record.message = message;
+            record.button = button;
+            record.tabIndex = frame.getAttribute('tabindex');
+            record.ariaHidden = frame.getAttribute('aria-hidden');
+            frame.setAttribute('tabindex', '-1');
+            frame.setAttribute('aria-hidden', 'true');
+            frame.parentNode.insertBefore(host, frame);
+            host.appendChild(frame);
+            this.updateCopy(record);
+            this.layout();
+            if (this.resizeObserver) {
+                this.resizeObserver.observe(frame);
+                this.resizeObserver.observe(host);
+            }
+        }
+
+        removePlaceholder(record) {
+            const host = record.host;
+            if (!host) return;
+            const frame = record.frame;
+            if (this.resizeObserver) {
+                this.resizeObserver.unobserve(frame);
+                this.resizeObserver.unobserve(host);
+            }
+            if (frame.parentNode === host) {
+                if (host.parentNode) host.parentNode.insertBefore(frame, host);
+                else host.removeChild(frame);
+            }
+            host.remove();
+            if (frame.getAttribute('tabindex') === '-1') restoreAttribute(frame, 'tabindex', record.tabIndex);
+            if (frame.getAttribute('aria-hidden') === 'true') restoreAttribute(frame, 'aria-hidden', record.ariaHidden);
+            record.host = null;
+            record.overlay = null;
+            record.message = null;
+            record.button = null;
+        }
+
+        release(record, restoreDetachedSource) {
+            this.removePlaceholder(record);
+            if (restoreDetachedSource && record.blocked && !record.frame.hasAttribute('src') &&
+                !record.frame.hasAttribute('srcdoc')) {
+                record.frame.setAttribute('src', record.source);
+            }
+            this.records.delete(record.frame);
+        }
+
+        prune() {
+            this.records.forEach(function (record) {
+                if (!record.frame.isConnected) {
+                    this.release(record, true);
+                } else if (record.host && record.frame.parentNode !== record.host) {
+                    this.removePlaceholder(record);
+                    this.inspect(record.frame);
+                }
+            }.bind(this));
+        }
+
+        sync() {
+            this.prune();
+            this.inspectNode(document.documentElement);
+        }
+
+        updateCopy(record) {
+            if (!record.host) return;
+            const copy = this.controller.copy();
+            record.host.setAttribute('lang', this.controller.locale);
+            record.message.textContent = this.controller.gpc ? copy.gpcMessage : copy.mediaBlockedMessage;
+            record.button.textContent = copy.settingsLabel;
+        }
+
+        refreshCopy() {
+            this.records.forEach(this.updateCopy.bind(this));
+        }
+
+        layout() {
+            this.records.forEach(function (record) {
+                if (!record.host || !record.frame.isConnected) return;
+                const frame = record.frame;
+                const style = window.getComputedStyle(frame);
+                const positioned = style.position === 'absolute' || style.position === 'fixed';
+                const fullWidth = frame.getAttribute('width') === '100%' || frame.style.width === '100%';
+                record.host.style.display = positioned ? 'contents'
+                    : !fullWidth && ['inline', 'inline-block'].indexOf(style.display) >= 0 ? 'inline-block' : 'block';
+                record.host.style.position = positioned ? 'static' : 'relative';
+                const rect = style.position === 'fixed' ? frame.getBoundingClientRect() : null;
+                record.overlay.style.position = style.position === 'fixed' ? 'fixed' : 'absolute';
+                record.overlay.style.left = (rect ? rect.left : frame.offsetLeft) + 'px';
+                record.overlay.style.top = (rect ? rect.top : frame.offsetTop) + 'px';
+                record.overlay.style.width = frame.offsetWidth + 'px';
+                record.overlay.style.height = frame.offsetHeight + 'px';
+                record.overlay.hidden = frame.offsetWidth === 0 || frame.offsetHeight === 0;
+            });
+        }
     }
 
     class ConsentElement extends HTMLElement {
@@ -896,8 +1148,10 @@
             this.registerKnownGoogleTagId(config.googleTagId);
             this.element = document.createElement('ets-cookie-consent');
             this.element.setController(this);
+            this.media = new MediaController(this);
 
-            this.installGoogleTagGuards();
+            this.installProviderGuards();
+            this.media.sync();
             this.denyAnalytics();
             if (!this.state || !this.state.purposeDecisions.analytics) this.removeGoogleCookies();
             if (this.gpc && (!this.state || this.state.purposeDecisions.analytics)) {
@@ -916,6 +1170,7 @@
 
         mount() {
             if (!this.element.isConnected) document.body.appendChild(this.element);
+            this.media.sync();
             this.element.render();
             this.flushReceipts();
         }
@@ -963,29 +1218,35 @@
             }.bind(this));
         }
 
-        observeGoogleTagLoaders() {
+        inspectProviderNode(node) {
+            this.inspectGoogleTagNode(node);
+            this.media.inspectNode(node);
+        }
+
+        observeProviderNodes() {
             if (typeof window.MutationObserver !== 'function' || !document.documentElement) return;
-            const inspect = this.inspectGoogleTagNode.bind(this);
-            this.googleTagLoaderObserver = new window.MutationObserver(function (records) {
+            const inspect = this.inspectProviderNode.bind(this);
+            this.providerObserver = new window.MutationObserver(function (records) {
                 records.forEach(function (record) {
                     if (record.type === 'attributes') {
-                        if (record.target.tagName === 'SCRIPT') inspect(record.target);
+                        if (record.target.tagName === 'SCRIPT' || record.target.tagName === 'IFRAME') inspect(record.target);
                         return;
                     }
                     Array.prototype.forEach.call(record.addedNodes, inspect);
                 });
-            });
-            this.googleTagLoaderObserver.observe(document.documentElement, {
+                this.media.prune();
+            }.bind(this));
+            this.providerObserver.observe(document.documentElement, {
                 attributes: true,
-                attributeFilter: ['src'],
+                attributeFilter: ['src', 'srcdoc'],
                 childList: true,
                 subtree: true
             });
         }
 
-        installGoogleTagGuards() {
+        installProviderGuards() {
             this.installDataLayerGuard();
-            this.observeGoogleTagLoaders();
+            this.observeProviderNodes();
         }
 
         resolveLocale() {
@@ -1011,6 +1272,7 @@
             this.locale = normalized;
             this.storage.write('locale', normalized);
             this.pendingFocus = focusControl ? 'locale' : '';
+            this.media.refreshCopy();
             this.element.render();
             emit('localechange', { locale: normalized });
             return true;
@@ -1107,6 +1369,7 @@
                 this.removeGoogleCookies();
             }
 
+            this.media.sync();
             this.queueReceipt(decision, source, decisionAt);
             if (!initializing) this.pendingFocus = 'settings';
             this.element.render();
@@ -1277,13 +1540,14 @@
             }
         }
 
-        openSettings() {
+        openSettings(focusOrigin) {
             if (!this.state) {
                 this.mode = 'prompt';
             } else {
                 this.mode = 'settings';
             }
-            this.returnFocus = this.element.shadowRoot && this.element.shadowRoot.activeElement;
+            this.returnFocus = focusOrigin && typeof focusOrigin.focus === 'function' ? focusOrigin
+                : (this.element.shadowRoot && this.element.shadowRoot.activeElement) || document.activeElement;
             this.pendingFocus = 'panel';
             this.element.render();
         }

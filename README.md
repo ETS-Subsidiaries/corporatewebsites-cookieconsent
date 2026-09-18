@@ -2,7 +2,7 @@
 
 A static, dependency-free cookie consent runtime for public corporate websites, with optional consent receipt logging through an Azure Function and Azure Table Storage.
 
-The browser's local choice is authoritative. The banner, settings, locale selection, and Google tag decision continue to work when the receipt endpoint is missing, offline, or not deployed.
+The browser's local choice is authoritative. The banner, settings, locale selection, Google tag decision, and YouTube iframe gate continue to work when the receipt endpoint is missing, offline, or not deployed.
 
 ## Contents
 
@@ -10,6 +10,7 @@ The browser's local choice is authoritative. The banner, settings, locale select
 | --- | --- |
 | `cookie-consent.js` | Static browser runtime served through jsDelivr or a website's own static hosting |
 | `cookie-consent.min.js` | Minified build of the browser runtime |
+| `preview.html` | Manual preview with unchanged YouTube embeds, responsive/dynamic cases, and cookie settings |
 | `function_app.py` | Optional Azure Functions Python v2 receipt endpoint |
 | `host.json` | Azure Functions host and telemetry settings |
 | `local.settings.example.json` | Secret-free local settings template |
@@ -21,23 +22,25 @@ The browser runtime has no production dependencies or browser build step. Node.j
 
 ## Quick start
 
-These examples assume that a release tag has been published. Repository maintainers should complete [Publish through jsDelivr](#publish-through-jsdelivr) before giving a CDN URL to a website owner.
+These examples target version `1.3.0` and assume its release tag has been published; source changes do not publish that tag. Repository maintainers should complete [Publish through jsDelivr](#publish-through-jsdelivr) before giving a CDN URL to a website owner.
 
 Place the script in the document `<head>` before Google Analytics, Google Ads, Google Tag Manager, or any other analytics loader. For strict opt-in, no plugin or other integration may insert a Google tag independently; configure the tag on this runtime instead.
 
-### Consent UI only
+For YouTube, keep the runtime early in the head without `async` or `defer` to reduce the detection race. Automatic iframe gating is **best effort, not strict cookie prevention**; see [YouTube embeds](#youtube-embeds).
+
+### Consent UI and YouTube gating
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.2.0/cookie-consent.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.3.0/cookie-consent.js"></script>
 ```
 
-The banner and local consent settings work without any attributes. Analytics loading and receipt logging remain disabled.
+The banner, local consent settings, and automatic YouTube iframe detection work without any attributes. Analytics loading and receipt logging remain disabled.
 
 ### Consent UI with a Google tag
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.2.0/cookie-consent.js"
+  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.3.0/cookie-consent.js"
   data-google-tag-id="GT-TAG123456"
   data-position="bottom-right"
 ></script>
@@ -65,7 +68,7 @@ Then configure the same Google tag ID on this runtime with `data-google-tag-id`.
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.2.0/cookie-consent.js"
+  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.3.0/cookie-consent.js"
   data-site-id="example-entity"
   data-google-tag-id="GT-TAG123456"
   data-receipt-endpoint="https://FUNCTION-APP.azurewebsites.net/api/consent-receipts"
@@ -81,9 +84,9 @@ The editable block is at the top of `cookie-consent.js`:
 
 ```javascript
 const CONFIG = {
-    runtimeVersion: '1.2.0',
+    runtimeVersion: '1.3.0',
     protocolVersion: 1,
-    noticeVersion: '2026-08-21',
+    noticeVersion: '2026-09-18',
     defaultLocale: 'en',
     position: 'bottom-left',
     consentLifetimeMonths: 6,
@@ -138,7 +141,7 @@ Use valid JSON inside a single-quoted HTML attribute:
 
 ```html
 <script
-  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.2.0/cookie-consent.js"
+  src="https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.3.0/cookie-consent.js"
   data-config='{
     "position": "top-right",
     "privacyPolicyUrl": "https://www.example.com/privacy",
@@ -188,6 +191,8 @@ Every locale requires:
 | `statusAccepted` | Accepted status text |
 | `statusDeclined` | Declined status text |
 | `gpcMessage` | Global Privacy Control explanation |
+
+`mediaBlockedMessage` is optional and supplies the video-placeholder explanation. If omitted, it defaults to the English text "Accept cookies to view this video." Existing custom locales remain valid without this new field; translate it for a fully localized placeholder. The CTA reuses `settingsLabel`, and GPC uses `gpcMessage`. An explicitly supplied empty or invalid media message rejects the override through the existing `invalid-data-config` diagnostic.
 
 Locale resolution checks `navigator.languages` in order:
 
@@ -304,15 +309,76 @@ Available part names:
 
 1. The runtime places denied Google Consent Mode defaults before queued measurement commands.
 2. With no current choice, it shows the notice.
-3. Acceptance is saved locally and activates configured or detected Google tag IDs.
-4. Decline or withdrawal keeps analytics denied and removes accessible first-party Google Analytics and Ads cookies, including `_ga`, `_gid`, `_gat`, `_gac_*`, `_gcl_*`, `FPGCLAW`, and `FPGCLGB`.
+3. Acceptance is saved locally, activates configured or detected Google tag IDs, and restores eligible YouTube embeds.
+4. Decline or withdrawal keeps analytics denied, unloads detected YouTube embeds, and removes accessible first-party Google Analytics and Ads cookies, including `_ga`, `_gid`, `_gat`, `_gac_*`, `_gcl_*`, `FPGCLAW`, and `FPGCLGB`.
 5. A choice expires after six months by default.
 6. Changing `noticeVersion` invalidates the previous choice and shows the notice again.
-7. Global Privacy Control records a local rejection, keeps analytics disabled, and leaves settings available.
+7. Global Privacy Control records a local rejection, keeps analytics and detected videos disabled, and leaves settings available.
 
 With `data-google-tag-id` and no competing loader, this runtime uses strict opt-in: the Google script and its network requests do not exist before acceptance. If another integration loads Google first, the runtime applies denied consent and guards future configuration, but Google's advanced consent behavior can still send cookieless pings. It cannot undo requests that were already sent before the runtime loaded.
 
-The runtime always denies advertising storage, ad user data, and ad personalization. It grants only `analytics_storage`.
+For Google Consent Mode, the runtime always denies advertising storage, ad user data, and ad personalization. It grants only `analytics_storage`. These Google tag settings do not control the cookies or tracking used by an enabled YouTube iframe.
+
+## YouTube embeds
+
+**Automatic blocking is best effort.** An unchanged iframe's `src` can trigger a request before the runtime or its mutation observer unloads it. YouTube may already have received data or set cookies. The runtime cannot retract those requests, stop every in-flight request, or erase cross-origin YouTube cookies. This feature is not a guarantee of zero pre-consent requests or cookies.
+
+Keep standard embed markup unchanged:
+
+```html
+<iframe
+  width="560"
+  height="315"
+  src="https://www.youtube.com/embed/VIDEO_ID"
+  title="YouTube video player"
+  referrerpolicy="strict-origin-when-cross-origin"
+  allowfullscreen
+></iframe>
+```
+
+The runtime recognizes HTTP(S) `/embed/...` URLs on `youtube.com`, `www.youtube.com`, `youtube-nocookie.com`, and `www.youtube-nocookie.com`. It scans existing frames and observes new frames and source changes, including multiple videos on a page.
+
+- Without a valid agreement, it removes the detected iframe's active URL and places a local, thumbnail-free placeholder over its reserved space. Merely covering a live player would not block loading.
+- The **Cookie settings** button opens the original popup. Clicking it does not grant consent or activate a player.
+- Agreement restores eligible iframe URLs, including their original playback parameters. The runtime does not add autoplay or simulate Play.
+- A returning visitor with valid agreement to the current notice sees videos enabled without another click or an extra runtime-induced navigation.
+- Decline, withdrawal, and Global Privacy Control keep or return detected videos to the blocked state. Withdrawal unloads a running player; it does not remove cookies already set by YouTube.
+- With JavaScript disabled or this runtime unavailable, the original embeds load normally. If mutation observation is unavailable, the runtime emits `media-observer-unavailable`; initial scans and consent changes still process present frames, but continuous detection is unavailable.
+
+### Scope and integration limits
+
+This version handles standard iframes in the page's light DOM. Standalone thumbnail images, CSS poster backgrounds, preloads/preconnects, YouTube API scripts, lite-player/plugin integrations, frames inside other documents, and private shadow DOM are not managed. `youtube-nocookie.com` is still gated; changing domains is not a substitute for consent.
+
+Blocked frames temporarily live inside an `ets-consent-media` wrapper, which is removed on activation. The same iframe node, author attributes, and URL are retained. Verify your website's layout, especially CSS that depends on an iframe being a direct child. Fixed-size and responsive examples are provided in `preview.html`.
+
+For a strict zero-request requirement, the website must deliver initially inert embed URLs and omit/defer associated remote assets, for example through a CMS/server rewrite plus consent-controlled activation. That integration is not implemented by this automatic detector. No browser-side overlay can make an already-started request unsent.
+
+### Shared choice and notice migration
+
+YouTube uses the existing agreement, not a new category or storage flag. The legacy `purposeDecisions.analytics` boolean controls both analytics and eligible videos; the receipt schema, Azure `AnalyticsAllowed` field, and protocol version remain unchanged.
+
+Version `1.3.0` updates the default notice to `2026-09-18` and describes analytics and embedded videos. Choices saved against the previous notice are invalidated, so visitors must decide again. **If your site overrides notice copy or `noticeVersion`, update those values too before deployment.** Custom legal copy is not rewritten automatically. Supply current translations for the notice, statuses, withdrawal label, and GPC explanation as well as the optional media message.
+
+### Placeholder styling and other providers
+
+The local placeholder loads no thumbnail, external image, font, or provider script. It uses the existing consent theme variables with built-in defaults. Apply shared overrides to both hosts when needed:
+
+```css
+ets-cookie-consent,
+ets-consent-media {
+  --ets-consent-panel-background: #ffffff;
+  --ets-consent-panel-color: #383b42;
+  --ets-consent-settings-background: #29526e;
+}
+
+ets-consent-media::part(media-placeholder) {
+  border-radius: 4px;
+}
+```
+
+The media component exposes `media-placeholder`, `media-message`, and `media-settings-button` parts. Its native button is keyboard operable; closing the settings dialog returns focus to the invoking button when it still exists.
+
+The private `MEDIA_PROVIDERS` table is the extension point for another iframe provider: add its identifier, explicit hostnames, and embed-path matcher, then cover it with the same lifecycle tests. All entries share URL capture, consent activation, unloading, and placeholder behavior. Review notice copy and versioning whenever a provider is added. There is no public plugin registry or provider-specific loading framework.
 
 ## Browser API
 
@@ -331,10 +397,10 @@ window.ETSCookieConsent.setLocale('en');
 {
   "purposeDecisions": { "analytics": true },
   "decisionSource": "accept",
-  "decisionAt": "2026-08-21T14:00:00.000Z",
-  "expiresAt": "2027-02-21T14:00:00.000Z",
+  "decisionAt": "2026-09-18T14:00:00.000Z",
+  "expiresAt": "2027-03-18T14:00:00.000Z",
   "locale": "en",
-  "noticeVersion": "2026-08-21",
+  "noticeVersion": "2026-09-18",
   "globalPrivacyControl": false
 }
 ```
@@ -355,7 +421,7 @@ Listen before loading the runtime:
 
 | Event | Meaning |
 | --- | --- |
-| `ets-cookie-consent:statechange` | Local analytics choice changed |
+| `ets-cookie-consent:statechange` | Shared analytics/video choice changed |
 | `ets-cookie-consent:localechange` | Visitor selected another configured locale |
 | `ets-cookie-consent:provider-detected` | A Google tag was present before the runtime |
 | `ets-cookie-consent:provider-activated` | A configured or detected Google tag was activated |
@@ -363,7 +429,7 @@ Listen before loading the runtime:
 | `ets-cookie-consent:receipt-failed` | Receipt failed; detail says whether it is retryable |
 | `ets-cookie-consent:receipt-skipped` | Logging is disabled because site ID or endpoint is absent |
 | `ets-cookie-consent:storage-unavailable` | Browser local storage could not be read or written |
-| `ets-cookie-consent:diagnostic` | Duplicate runtime, invalid config, or provider load problem |
+| `ets-cookie-consent:diagnostic` | Duplicate runtime, invalid config, provider load problem, or unavailable media observation |
 
 Receipt and storage events are diagnostic only. They do not change analytics activation or display an error to the visitor.
 
@@ -394,9 +460,9 @@ The browser sends:
   "purposeDecisions": { "analytics": true },
   "decisionSource": "accept",
   "locale": "en",
-  "clientDecisionAt": "2026-08-21T14:00:00.000Z",
-  "noticeVersion": "2026-08-21",
-  "runtimeVersion": "1.2.0",
+  "clientDecisionAt": "2026-09-18T14:00:00.000Z",
+  "noticeVersion": "2026-09-18",
+  "runtimeVersion": "1.3.0",
   "protocolVersion": 1
 }
 ```
@@ -519,10 +585,16 @@ The browser runtime itself remains dependency-free.
 Use an approved browser and Python's static server:
 
 ```powershell
-py -m http.server 8000
+py -m http.server 8000 --bind 127.0.0.1
 ```
 
-Create a temporary HTML page that loads `http://127.0.0.1:8000/cookie-consent.js`, then verify:
+Open `http://127.0.0.1:8000/preview.html` for the video and settings examples. It includes the supplied unchanged YouTube iframe, an add-video button, a responsive privacy-enhanced embed, and an unrelated local iframe.
+
+From a fresh browser profile, inspect the iframe URLs and Network/Application panels before consent. Detected YouTube frames should lose their active `src` and show local placeholders; the browser may still record initial provider requests or cookies from the detection race. Do not interpret browser third-party-cookie restrictions as proof that the embed did not load.
+
+Open the popup through a video's CTA, decline, reopen, agree, reload with saved agreement, and withdraw while a player is running. Check that all supported videos follow the choice, dynamically added videos use the current state, the local iframe stays unchanged, and keyboard focus and narrow-screen layouts remain usable. Repeat with GPC enabled. Inspect traffic from `youtube.com`, `youtube-nocookie.com`, `ytimg.com`, `googlevideo.com`, and related player endpoints; no remote assets should originate from the placeholder itself.
+
+For configuration-specific checks, use a temporary page with the relevant attributes and verify:
 
 1. The English notice appears with no attributes.
 2. `data-position` moves the panel to each supported corner.
@@ -576,8 +648,8 @@ After the release changes have been merged into `main`, tag that exact commit:
 
 ```powershell
 git fetch origin main
-git tag -a v1.2.0 -m "Release v1.2.0" origin/main
-git push origin v1.2.0
+git tag -a v1.3.0 -m "chore(release): publish v1.3.0" origin/main
+git push origin v1.3.0
 ```
 
 Use a new semantic version tag for every release. Never move, delete, or force-update a tag that a website may already reference. Creating a GitHub Release from the tag is useful for release notes, but jsDelivr only requires the public repository and Git tag.
@@ -590,10 +662,10 @@ The GitHub URL format is:
 https://cdn.jsdelivr.net/gh/<owner>/<repository>@<tag>/<file-path>
 ```
 
-The release URL is:
+After publishing the tag, the release URL is:
 
 ```text
-https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.2.0/cookie-consent.js
+https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.3.0/cookie-consent.js
 ```
 
 Requesting that URL is enough for jsDelivr to discover and cache the file. No separate registration or deployment is needed.
@@ -603,11 +675,11 @@ Requesting that URL is enough for jsDelivr to discover and cache the file. No se
 Run this after pushing the tag:
 
 ```powershell
-$Url = "https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.2.0/cookie-consent.js"
+$Url = "https://cdn.jsdelivr.net/gh/ETS-Subsidiaries/corporatewebsites-cookieconsent@v1.3.0/cookie-consent.js"
 $Response = Invoke-WebRequest -Uri $Url
 $Response.StatusCode
 $Response.Headers["Content-Type"]
-$Response.Content.Contains("runtimeVersion: '1.2.0'")
+$Response.Content.Contains("runtimeVersion: '1.3.0'")
 ```
 
 The expected status is `200`, the content type should identify JavaScript, and the final command should return `True`. Also open the URL in a browser and confirm that it shows the expected source rather than an error page.
@@ -623,7 +695,7 @@ If the request returns `404`, confirm that:
 
 | URL version | Update behavior | Recommended use |
 | --- | --- | --- |
-| `@v1.2.0` | Always serves that release | Production default; deliberate, auditable updates |
+| `@v1.3.0` | Always serves that release | Production default; deliberate, auditable updates |
 | `@<full-commit-sha>` | Always serves that commit | Emergency pinning or pre-release review |
 | `@1` | Follows the newest compatible `1.x` tag after CDN cache refresh | Centrally managed sites that have approved automatic minor and patch updates |
 | `@main`, `@latest`, or no version | Follows mutable or latest content | Do not use for production consent notices |

@@ -70,6 +70,26 @@
     article h2 { margin-top: 0; font-size: 1.65rem; }
     article p { color: #536873; font: 1rem/1.7 system-ui, sans-serif; }
 
+    .video-test { grid-column: 1 / -1; min-width: 0; padding: clamp(1rem, 4vw, 2rem); }
+    .video-example { max-width: 560px; margin: 1.5rem 0; }
+    .video-example iframe { display: block; max-width: 100%; height: auto; aspect-ratio: 560 / 315; }
+    .responsive-video { position: relative; max-width: 560px; aspect-ratio: 16 / 9; margin: 1.5rem 0; }
+    .responsive-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+    .local-control { display: block; max-width: 100%; margin: 1.5rem 0; border: 1px solid #d8e5ea; }
+    .additional-tests { margin-top: 2rem; }
+    .additional-tests summary { cursor: pointer; padding: .75rem 0; font: 650 1rem/1.5 system-ui, sans-serif; }
+    .test-button {
+      background: #29526e;
+      border: 2px solid transparent;
+      border-radius: 4px;
+      color: #fff;
+      cursor: pointer;
+      font: 650 .9rem/1.4 system-ui, sans-serif;
+      min-height: 44px;
+      padding: 10px 16px;
+    }
+    .test-button:focus-visible, summary:focus-visible { outline: 3px solid #008fc4; outline-offset: 3px; }
+
     .hint {
       position: fixed;
       top: 1rem;
@@ -85,6 +105,7 @@
       font: 700 .75rem/1.4 system-ui, sans-serif;
     }
   </style>
+  <script src="./cookie-consent.js"></script>
 </head>
 <body>
   <div class="hint">Accept the notice, then scroll to see the settings label collapse.</div>
@@ -98,6 +119,25 @@
   </header>
 
   <main>
+    <article class="video-test" id="youtube-test">
+      <h2>YouTube consent test</h2>
+      <p>This is the supplied embed, with its original URL and attributes. Before agreement, its placeholder should open the existing cookie popup. Agree to enable the player; withdraw consent to unload it again.</p>
+      <p><strong>Best-effort blocking:</strong> the browser can contact YouTube before the runtime detects the iframe. This cannot guarantee that no cookies were set. The placeholder itself fetches no thumbnail or other YouTube asset.</p>
+      <div class="video-example">
+        <iframe width="560" height="315" src="https://www.youtube.com/embed/dQw4w9WgXcQ?si=2INIyU6r-SEYJFZ6" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+      </div>
+      <button class="test-button" id="add-video" type="button">Add another YouTube embed</button>
+      <div id="dynamic-videos"></div>
+      <details class="additional-tests">
+        <summary>Responsive and unrelated iframe cases</summary>
+        <p>This privacy-enhanced embed uses an absolutely positioned, responsive iframe. It still requires the same agreement.</p>
+        <div class="responsive-video">
+          <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ" title="Responsive YouTube privacy-enhanced player" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <p>This local iframe is unrelated to YouTube and should remain visible regardless of consent.</p>
+        <iframe class="local-control" width="560" height="100" title="Unrelated iframe control" srcdoc="<p>Local iframe: unaffected by cookie consent.</p>"></iframe>
+      </details>
+    </article>
     <article>
       <h2>Scroll state</h2>
       <p>At the top of the page, the control shows its full “Cookie settings” label. Once the page scrolls down, the label fades away and the control becomes icon-only.</p>
@@ -116,6 +156,20 @@
     </article>
   </main>
 
-  <script src="./cookie-consent.js"></script>
+  <script>
+    document.getElementById('add-video').addEventListener('click', function () {
+      const frame = document.createElement('iframe');
+      frame.width = '560';
+      frame.height = '315';
+      frame.title = 'Dynamically added YouTube video';
+      frame.referrerPolicy = 'strict-origin-when-cross-origin';
+      frame.allowFullscreen = true;
+      frame.src = 'https://www.youtube.com/embed/dQw4w9WgXcQ?si=2INIyU6r-SEYJFZ6';
+      const example = document.createElement('div');
+      example.className = 'video-example';
+      example.appendChild(frame);
+      document.getElementById('dynamic-videos').appendChild(example);
+    });
+  </script>
 </body>
 </html>
